@@ -6,8 +6,14 @@ import { WorkoutTab } from "./routes/WorkoutTab";
 import { ExercisesTab } from "./routes/ExercisesTab";
 import { AnalyticsTab } from "./routes/AnalyticsTab";
 import { ProfileTab } from "./routes/ProfileTab";
+import { RoutineDetail } from "./routes/RoutineDetail";
+import { RoutineEditor } from "./routes/RoutineEditor";
+import { ActiveWorkout } from "./routes/ActiveWorkout";
+import { SessionSummary } from "./routes/SessionSummary";
+import { History } from "./routes/History";
+import { SessionDetail } from "./routes/SessionDetail";
 
-function Layout() {
+function TabLayout() {
   return (
     <div className="flex h-[100dvh] flex-col bg-bg">
       <main className="min-h-0 flex-1 overflow-y-auto">
@@ -36,13 +42,23 @@ export function App() {
   return (
     <BrowserRouter>
       <Routes>
-        <Route element={<Layout />}>
+        {/* Tabbed surfaces */}
+        <Route element={<TabLayout />}>
           <Route path="/workout" element={<WorkoutTab />} />
           <Route path="/exercises" element={<ExercisesTab />} />
           <Route path="/analytics" element={<AnalyticsTab />} />
           <Route path="/profile" element={<ProfileTab />} />
-          <Route path="*" element={<Navigate to="/workout" replace />} />
         </Route>
+
+        {/* Full-screen flows */}
+        <Route path="/workout/routine/:id" element={<RoutineDetail />} />
+        <Route path="/workout/routine/:id/edit" element={<RoutineEditor />} />
+        <Route path="/active/:sessionId" element={<ActiveWorkout />} />
+        <Route path="/summary/:sessionId" element={<SessionSummary />} />
+        <Route path="/history" element={<History />} />
+        <Route path="/history/:sessionId" element={<SessionDetail />} />
+
+        <Route path="*" element={<Navigate to="/workout" replace />} />
       </Routes>
     </BrowserRouter>
   );

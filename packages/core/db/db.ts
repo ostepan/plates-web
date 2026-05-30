@@ -42,7 +42,7 @@ export class PlatesDB extends Dexie {
       mesocycles: "id, programId, order",
       microcycles: "id, mesocycleId, weekIndex",
       programDays: "id, microcycleId, dayIndex, routineId",
-      sessions: "id, date, routineId, programDayID",
+      sessions: "id, date, durationSeconds, routineId, programDayID",
       sessionExercises: "id, sessionId, order",
       workoutSets: "id, sessionExerciseId, order",
       bodyWeightEntries: "id, date",
