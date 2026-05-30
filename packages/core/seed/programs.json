@@ -1,0 +1,327 @@
+[
+  {
+    "name": "Push Pull Legs",
+    "author": "Plates",
+    "weeks": 4,
+    "notes": "Klasické 6denní PPL s vestavěným odlehčovacím týdnem. Dvojitá progrese na všech pracovních sériích.",
+    "mesocycles": [
+      {
+        "weekCount": 4,
+        "progressionRule": "doubleProgression",
+        "linearStepKg": 2.5,
+        "targetRIR": 2,
+        "weeks": [
+          {
+            "isDeload": false,
+            "days": [
+              { "dayIndex": 1, "name": "Tlak A",  "exercises": [
+                { "key": "exercise.bench_press",            "sets": 3, "repsMin": 6, "repsMax": 8,  "rest": 150 },
+                { "key": "exercise.overhead_press",         "sets": 3, "repsMin": 8, "repsMax": 10, "rest": 120 },
+                { "key": "exercise.incline_bench_press",    "sets": 3, "repsMin": 8, "repsMax": 12, "rest": 120 },
+                { "key": "exercise.lateral_raise",          "sets": 3, "repsMin": 12,"repsMax": 15, "rest": 60  },
+                { "key": "exercise.tricep_pushdown",        "sets": 3, "repsMin": 10,"repsMax": 15, "rest": 75  }
+              ]},
+              { "dayIndex": 2, "name": "Tah A",  "exercises": [
+                { "key": "exercise.deadlift",               "sets": 3, "repsMin": 4, "repsMax": 6,  "rest": 180 },
+                { "key": "exercise.pullup",                 "sets": 3, "repsMin": 6, "repsMax": 10, "rest": 120 },
+                { "key": "exercise.barbell_row",            "sets": 3, "repsMin": 8, "repsMax": 10, "rest": 120 },
+                { "key": "exercise.face_pull",              "sets": 3, "repsMin": 12,"repsMax": 15, "rest": 60  },
+                { "key": "exercise.barbell_curl",           "sets": 3, "repsMin": 8, "repsMax": 12, "rest": 75  }
+              ]},
+              { "dayIndex": 3, "name": "Nohy A",  "exercises": [
+                { "key": "exercise.back_squat",             "sets": 3, "repsMin": 6, "repsMax": 8,  "rest": 180 },
+                { "key": "exercise.romanian_deadlift",      "sets": 3, "repsMin": 8, "repsMax": 10, "rest": 150 },
+                { "key": "exercise.leg_press",              "sets": 3, "repsMin": 10,"repsMax": 12, "rest": 120 },
+                { "key": "exercise.leg_curl",               "sets": 3, "repsMin": 10,"repsMax": 15, "rest": 75  },
+                { "key": "exercise.calf_raise",             "sets": 4, "repsMin": 10,"repsMax": 15, "rest": 60  }
+              ]},
+              { "dayIndex": 4, "name": "Tlak B",  "exercises": [
+                { "key": "exercise.incline_bench_press",    "sets": 3, "repsMin": 6, "repsMax": 8,  "rest": 150 },
+                { "key": "exercise.dumbbell_shoulder_press","sets": 3, "repsMin": 8, "repsMax": 10, "rest": 120 },
+                { "key": "exercise.dips",                   "sets": 3, "repsMin": 8, "repsMax": 12, "rest": 120 },
+                { "key": "exercise.cable_crossover",        "sets": 3, "repsMin": 12,"repsMax": 15, "rest": 60  },
+                { "key": "exercise.skullcrusher",           "sets": 3, "repsMin": 10,"repsMax": 12, "rest": 75  }
+              ]},
+              { "dayIndex": 5, "name": "Tah B",  "exercises": [
+                { "key": "exercise.barbell_row",            "sets": 3, "repsMin": 6, "repsMax": 8,  "rest": 150 },
+                { "key": "exercise.lat_pulldown",           "sets": 3, "repsMin": 8, "repsMax": 12, "rest": 90  },
+                { "key": "exercise.cable_row",              "sets": 3, "repsMin": 10,"repsMax": 12, "rest": 90  },
+                { "key": "exercise.face_pull",              "sets": 3, "repsMin": 12,"repsMax": 15, "rest": 60  },
+                { "key": "exercise.hammer_curl",            "sets": 3, "repsMin": 10,"repsMax": 12, "rest": 75  }
+              ]},
+              { "dayIndex": 6, "name": "Nohy B",  "exercises": [
+                { "key": "exercise.romanian_deadlift",      "sets": 3, "repsMin": 6, "repsMax": 8,  "rest": 150 },
+                { "key": "exercise.bulgarian_split_squat",  "sets": 3, "repsMin": 8, "repsMax": 10, "rest": 90  },
+                { "key": "exercise.leg_press",              "sets": 3, "repsMin": 10,"repsMax": 15, "rest": 90  },
+                { "key": "exercise.leg_extension",          "sets": 3, "repsMin": 10,"repsMax": 15, "rest": 60  },
+                { "key": "exercise.calf_raise",             "sets": 4, "repsMin": 10,"repsMax": 15, "rest": 60  }
+              ]}
+            ]
+          },
+          { "isDeload": false, "copyOfWeek": 0 },
+          { "isDeload": false, "copyOfWeek": 0 },
+          { "isDeload": true,  "copyOfWeek": 0, "deloadVolumePercent": 60, "deloadIntensityPercent": 75 }
+        ]
+      }
+    ]
+  },
+
+  {
+    "name": "Upper / Lower",
+    "author": "Plates",
+    "weeks": 4,
+    "notes": "4denní rozdělení horní/dolní. Progrese podle RIR — přidej váhu, když trénink dokončíš s větší rezervou, než je cílové RIR.",
+    "mesocycles": [
+      {
+        "weekCount": 4,
+        "progressionRule": "rirBased",
+        "linearStepKg": 2.5,
+        "targetRIR": 2,
+        "weeks": [
+          {
+            "isDeload": false,
+            "days": [
+              { "dayIndex": 1, "name": "Horní A", "exercises": [
+                { "key": "exercise.bench_press",            "sets": 4, "repsMin": 6,  "repsMax": 8,  "rest": 150 },
+                { "key": "exercise.barbell_row",            "sets": 4, "repsMin": 6,  "repsMax": 8,  "rest": 150 },
+                { "key": "exercise.dumbbell_shoulder_press","sets": 3, "repsMin": 8,  "repsMax": 12, "rest": 120 },
+                { "key": "exercise.lat_pulldown",           "sets": 3, "repsMin": 10, "repsMax": 12, "rest": 90  },
+                { "key": "exercise.barbell_curl",           "sets": 3, "repsMin": 8,  "repsMax": 12, "rest": 75  },
+                { "key": "exercise.tricep_pushdown",        "sets": 3, "repsMin": 10, "repsMax": 15, "rest": 75  }
+              ]},
+              { "dayIndex": 2, "name": "Dolní A", "exercises": [
+                { "key": "exercise.back_squat",             "sets": 4, "repsMin": 5,  "repsMax": 8,  "rest": 180 },
+                { "key": "exercise.romanian_deadlift",      "sets": 3, "repsMin": 8,  "repsMax": 10, "rest": 150 },
+                { "key": "exercise.leg_press",              "sets": 3, "repsMin": 10, "repsMax": 12, "rest": 120 },
+                { "key": "exercise.leg_curl",               "sets": 3, "repsMin": 10, "repsMax": 15, "rest": 75  },
+                { "key": "exercise.calf_raise",             "sets": 4, "repsMin": 10, "repsMax": 15, "rest": 60  }
+              ]},
+              { "dayIndex": 3, "name": "Horní B", "exercises": [
+                { "key": "exercise.incline_bench_press",    "sets": 4, "repsMin": 8,  "repsMax": 10, "rest": 120 },
+                { "key": "exercise.cable_row",              "sets": 4, "repsMin": 8,  "repsMax": 10, "rest": 120 },
+                { "key": "exercise.lateral_raise",          "sets": 4, "repsMin": 12, "repsMax": 15, "rest": 60  },
+                { "key": "exercise.face_pull",              "sets": 3, "repsMin": 12, "repsMax": 15, "rest": 60  },
+                { "key": "exercise.hammer_curl",            "sets": 3, "repsMin": 10, "repsMax": 12, "rest": 75  },
+                { "key": "exercise.skullcrusher",           "sets": 3, "repsMin": 8,  "repsMax": 12, "rest": 75  }
+              ]},
+              { "dayIndex": 4, "name": "Dolní B", "exercises": [
+                { "key": "exercise.deadlift",               "sets": 3, "repsMin": 4,  "repsMax": 6,  "rest": 180 },
+                { "key": "exercise.bulgarian_split_squat",  "sets": 3, "repsMin": 8,  "repsMax": 10, "rest": 120 },
+                { "key": "exercise.hip_thrust",             "sets": 3, "repsMin": 8,  "repsMax": 12, "rest": 120 },
+                { "key": "exercise.leg_extension",          "sets": 3, "repsMin": 12, "repsMax": 15, "rest": 60  },
+                { "key": "exercise.calf_raise",             "sets": 4, "repsMin": 10, "repsMax": 15, "rest": 60  }
+              ]}
+            ]
+          },
+          { "isDeload": false, "copyOfWeek": 0 },
+          { "isDeload": false, "copyOfWeek": 0 },
+          { "isDeload": true,  "copyOfWeek": 0, "deloadVolumePercent": 60, "deloadIntensityPercent": 70 }
+        ]
+      }
+    ]
+  },
+
+  {
+    "name": "5/3/1 BBB",
+    "author": "Jim Wendler",
+    "weeks": 4,
+    "notes": "5/3/1 Boring But Big — hlavní cviky podle procenta z 1RM, doplňky lineární progresí. 4. týden je automatické odlehčení.",
+    "mesocycles": [
+      {
+        "weekCount": 4,
+        "progressionRule": "percentageOf1RM",
+        "linearStepKg": 2.5,
+        "targetRIR": 1,
+        "weeks": [
+          {
+            "isDeload": false,
+            "days": [
+              { "dayIndex": 1, "name": "Den tlaku", "exercises": [
+                { "key": "exercise.overhead_press",         "sets": 5, "repsMin": 5, "repsMax": 5,  "rest": 180 },
+                { "key": "exercise.bench_press",            "sets": 5, "repsMin": 10,"repsMax": 10, "rest": 120 },
+                { "key": "exercise.chinup",                 "sets": 5, "repsMin": 10,"repsMax": 10, "rest": 90  }
+              ]},
+              { "dayIndex": 2, "name": "Den dřepu", "exercises": [
+                { "key": "exercise.back_squat",             "sets": 5, "repsMin": 5, "repsMax": 5,  "rest": 180 },
+                { "key": "exercise.back_squat",             "sets": 5, "repsMin": 10,"repsMax": 10, "rest": 120 },
+                { "key": "exercise.leg_curl",               "sets": 5, "repsMin": 10,"repsMax": 15, "rest": 60  }
+              ]},
+              { "dayIndex": 3, "name": "Den benche", "exercises": [
+                { "key": "exercise.bench_press",            "sets": 5, "repsMin": 5, "repsMax": 5,  "rest": 180 },
+                { "key": "exercise.overhead_press",         "sets": 5, "repsMin": 10,"repsMax": 10, "rest": 120 },
+                { "key": "exercise.barbell_row",            "sets": 5, "repsMin": 10,"repsMax": 10, "rest": 90  }
+              ]},
+              { "dayIndex": 4, "name": "Den mrtvého tahu", "exercises": [
+                { "key": "exercise.deadlift",               "sets": 5, "repsMin": 5, "repsMax": 5,  "rest": 180 },
+                { "key": "exercise.deadlift",               "sets": 5, "repsMin": 10,"repsMax": 10, "rest": 150 },
+                { "key": "exercise.hyperextension",         "sets": 5, "repsMin": 10,"repsMax": 15, "rest": 60  }
+              ]}
+            ]
+          },
+          { "isDeload": false, "copyOfWeek": 0 },
+          { "isDeload": false, "copyOfWeek": 0 },
+          { "isDeload": true,  "copyOfWeek": 0, "deloadVolumePercent": 50, "deloadIntensityPercent": 65 }
+        ]
+      }
+    ]
+  },
+
+  {
+    "name": "Lyle Generic Bulking",
+    "author": "Lyle McDonald",
+    "weeks": 4,
+    "notes": "Generic Bulking Routine od Lylea McDonalda — 4denní horní/dolní s těžkým dnem a dnem o vyšším počtu opakování pro každou. Dvojitá progrese na každé pracovní sérii; 4. týden odlehčuje.",
+    "mesocycles": [
+      {
+        "weekCount": 4,
+        "progressionRule": "doubleProgression",
+        "linearStepKg": 2.5,
+        "targetRIR": 2,
+        "weeks": [
+          {
+            "isDeload": false,
+            "days": [
+              { "dayIndex": 1, "name": "Horní těžký", "exercises": [
+                { "key": "exercise.bench_press",            "sets": 3, "repsMin": 6, "repsMax": 8,  "rest": 180 },
+                { "key": "exercise.barbell_row",            "sets": 3, "repsMin": 6, "repsMax": 8,  "rest": 180 },
+                { "key": "exercise.incline_bench_press",    "sets": 3, "repsMin": 6, "repsMax": 8,  "rest": 150 },
+                { "key": "exercise.lat_pulldown",           "sets": 3, "repsMin": 6, "repsMax": 8,  "rest": 150 },
+                { "key": "exercise.dumbbell_curl",          "sets": 3, "repsMin": 6, "repsMax": 8,  "rest": 90  },
+                { "key": "exercise.skullcrusher",           "sets": 3, "repsMin": 6, "repsMax": 8,  "rest": 90  }
+              ]},
+              { "dayIndex": 2, "name": "Dolní těžký", "exercises": [
+                { "key": "exercise.back_squat",             "sets": 3, "repsMin": 6, "repsMax": 8,  "rest": 180 },
+                { "key": "exercise.romanian_deadlift",      "sets": 3, "repsMin": 6, "repsMax": 8,  "rest": 180 },
+                { "key": "exercise.leg_press",              "sets": 3, "repsMin": 6, "repsMax": 8,  "rest": 150 },
+                { "key": "exercise.leg_curl",               "sets": 3, "repsMin": 6, "repsMax": 8,  "rest": 90  },
+                { "key": "exercise.calf_raise",             "sets": 4, "repsMin": 6, "repsMax": 10, "rest": 60  }
+              ]},
+              { "dayIndex": 3, "name": "Horní lehký", "exercises": [
+                { "key": "exercise.dumbbell_shoulder_press","sets": 3, "repsMin": 10,"repsMax": 12, "rest": 120 },
+                { "key": "exercise.cable_row",              "sets": 3, "repsMin": 10,"repsMax": 12, "rest": 120 },
+                { "key": "exercise.dumbbell_fly",           "sets": 3, "repsMin": 10,"repsMax": 12, "rest": 90  },
+                { "key": "exercise.face_pull",              "sets": 3, "repsMin": 10,"repsMax": 15, "rest": 60  },
+                { "key": "exercise.hammer_curl",            "sets": 3, "repsMin": 10,"repsMax": 12, "rest": 75  },
+                { "key": "exercise.tricep_pushdown",        "sets": 3, "repsMin": 10,"repsMax": 12, "rest": 75  }
+              ]},
+              { "dayIndex": 4, "name": "Dolní lehký", "exercises": [
+                { "key": "exercise.bulgarian_split_squat",  "sets": 3, "repsMin": 10,"repsMax": 12, "rest": 120 },
+                { "key": "exercise.romanian_deadlift",      "sets": 3, "repsMin": 10,"repsMax": 12, "rest": 120 },
+                { "key": "exercise.leg_extension",          "sets": 3, "repsMin": 10,"repsMax": 15, "rest": 75  },
+                { "key": "exercise.hip_thrust",             "sets": 3, "repsMin": 10,"repsMax": 12, "rest": 90  },
+                { "key": "exercise.calf_raise",             "sets": 4, "repsMin": 10,"repsMax": 15, "rest": 60  }
+              ]}
+            ]
+          },
+          { "isDeload": false, "copyOfWeek": 0 },
+          { "isDeload": false, "copyOfWeek": 0 },
+          { "isDeload": true,  "copyOfWeek": 0, "deloadVolumePercent": 60, "deloadIntensityPercent": 75 }
+        ]
+      }
+    ]
+  },
+
+  {
+    "name": "GZCLP",
+    "author": "Cody Lefever",
+    "weeks": 4,
+    "notes": "GZCL lineární progrese — 4denní rotace (tlak, dřep, bench, mrtvý tah) se třemi úrovněmi: T1 těžká 5×3, T2 hypertrofie 3×10, T3 doplňky 3×15. Lineární přidávání váhy každý trénink.",
+    "mesocycles": [
+      {
+        "weekCount": 4,
+        "progressionRule": "linear",
+        "linearStepKg": 2.5,
+        "targetRIR": 1,
+        "weeks": [
+          {
+            "isDeload": false,
+            "days": [
+              { "dayIndex": 1, "name": "Den tlaku", "exercises": [
+                { "key": "exercise.overhead_press",         "sets": 5, "repsMin": 3,  "repsMax": 3,  "rest": 180 },
+                { "key": "exercise.bench_press",            "sets": 3, "repsMin": 10, "repsMax": 10, "rest": 120 },
+                { "key": "exercise.lat_pulldown",           "sets": 3, "repsMin": 15, "repsMax": 15, "rest": 90  }
+              ]},
+              { "dayIndex": 2, "name": "Den dřepu", "exercises": [
+                { "key": "exercise.back_squat",             "sets": 5, "repsMin": 3,  "repsMax": 3,  "rest": 180 },
+                { "key": "exercise.romanian_deadlift",      "sets": 3, "repsMin": 10, "repsMax": 10, "rest": 150 },
+                { "key": "exercise.leg_curl",               "sets": 3, "repsMin": 15, "repsMax": 15, "rest": 75  }
+              ]},
+              { "dayIndex": 3, "name": "Den benche", "exercises": [
+                { "key": "exercise.bench_press",            "sets": 5, "repsMin": 3,  "repsMax": 3,  "rest": 180 },
+                { "key": "exercise.overhead_press",         "sets": 3, "repsMin": 10, "repsMax": 10, "rest": 120 },
+                { "key": "exercise.cable_row",              "sets": 3, "repsMin": 15, "repsMax": 15, "rest": 90  }
+              ]},
+              { "dayIndex": 4, "name": "Den mrtvého tahu", "exercises": [
+                { "key": "exercise.deadlift",               "sets": 5, "repsMin": 3,  "repsMax": 3,  "rest": 180 },
+                { "key": "exercise.back_squat",             "sets": 3, "repsMin": 10, "repsMax": 10, "rest": 150 },
+                { "key": "exercise.hyperextension",         "sets": 3, "repsMin": 15, "repsMax": 15, "rest": 60  }
+              ]}
+            ]
+          },
+          { "isDeload": false, "copyOfWeek": 0 },
+          { "isDeload": false, "copyOfWeek": 0 },
+          { "isDeload": true,  "copyOfWeek": 0, "deloadVolumePercent": 60, "deloadIntensityPercent": 70 }
+        ]
+      }
+    ]
+  },
+
+  {
+    "name": "Greyskull LP",
+    "author": "John Sheaffer",
+    "weeks": 4,
+    "notes": "Greyskull LP — 3denní full-body se střídáním A/B/A a pak B/A/B. Každý trénink má jednu AMRAP vrcholovou sérii na hlavní cvik. Přidej váhu po každém tréninku, kdy splníš ≥ cíl opakování.",
+    "mesocycles": [
+      {
+        "weekCount": 4,
+        "progressionRule": "linear",
+        "linearStepKg": 2.5,
+        "targetRIR": 0,
+        "weeks": [
+          {
+            "isDeload": false,
+            "days": [
+              { "dayIndex": 1, "name": "Den A1", "exercises": [
+                { "key": "exercise.bench_press",            "sets": 3, "repsMin": 5, "repsMax": 5,  "rest": 180 },
+                { "key": "exercise.back_squat",             "sets": 3, "repsMin": 5, "repsMax": 5,  "rest": 180 },
+                { "key": "exercise.dumbbell_curl",          "sets": 2, "repsMin": 8, "repsMax": 12, "rest": 75  }
+              ]},
+              { "dayIndex": 2, "name": "Den B1", "exercises": [
+                { "key": "exercise.overhead_press",         "sets": 3, "repsMin": 5, "repsMax": 5,  "rest": 180 },
+                { "key": "exercise.deadlift",               "sets": 1, "repsMin": 5, "repsMax": 5,  "rest": 180 },
+                { "key": "exercise.pullup",                 "sets": 3, "repsMin": 6, "repsMax": 10, "rest": 90  }
+              ]},
+              { "dayIndex": 3, "name": "Den A2", "exercises": [
+                { "key": "exercise.bench_press",            "sets": 3, "repsMin": 5, "repsMax": 5,  "rest": 180 },
+                { "key": "exercise.back_squat",             "sets": 3, "repsMin": 5, "repsMax": 5,  "rest": 180 },
+                { "key": "exercise.dumbbell_curl",          "sets": 2, "repsMin": 8, "repsMax": 12, "rest": 75  }
+              ]}
+            ]
+          },
+          {
+            "isDeload": false,
+            "days": [
+              { "dayIndex": 1, "name": "Den B2", "exercises": [
+                { "key": "exercise.overhead_press",         "sets": 3, "repsMin": 5, "repsMax": 5,  "rest": 180 },
+                { "key": "exercise.deadlift",               "sets": 1, "repsMin": 5, "repsMax": 5,  "rest": 180 },
+                { "key": "exercise.pullup",                 "sets": 3, "repsMin": 6, "repsMax": 10, "rest": 90  }
+              ]},
+              { "dayIndex": 2, "name": "Den A3", "exercises": [
+                { "key": "exercise.bench_press",            "sets": 3, "repsMin": 5, "repsMax": 5,  "rest": 180 },
+                { "key": "exercise.back_squat",             "sets": 3, "repsMin": 5, "repsMax": 5,  "rest": 180 },
+                { "key": "exercise.dumbbell_curl",          "sets": 2, "repsMin": 8, "repsMax": 12, "rest": 75  }
+              ]},
+              { "dayIndex": 3, "name": "Den B3", "exercises": [
+                { "key": "exercise.overhead_press",         "sets": 3, "repsMin": 5, "repsMax": 5,  "rest": 180 },
+                { "key": "exercise.deadlift",               "sets": 1, "repsMin": 5, "repsMax": 5,  "rest": 180 },
+                { "key": "exercise.pullup",                 "sets": 3, "repsMin": 6, "repsMax": 10, "rest": 90  }
+              ]}
+            ]
+          },
+          { "isDeload": false, "copyOfWeek": 0 },
+          { "isDeload": true,  "copyOfWeek": 0, "deloadVolumePercent": 70, "deloadIntensityPercent": 80 }
+        ]
+      }
+    ]
+  }
+]
