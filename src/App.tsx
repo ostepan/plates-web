@@ -16,6 +16,7 @@ import { History } from "./routes/History";
 import { SessionDetail } from "./routes/SessionDetail";
 import { ProgramsList } from "./routes/ProgramsList";
 import { ProgramDetail } from "./routes/ProgramDetail";
+import { Recovery } from "./routes/Recovery";
 
 function TabLayout() {
   return (
@@ -70,6 +71,7 @@ export function App() {
         <Route path="/programs/:id" element={<ProgramDetail />} />
         <Route path="/history" element={<History />} />
         <Route path="/history/:sessionId" element={<SessionDetail />} />
+        <Route path="/recovery" element={<Recovery />} />
 
         <Route path="*" element={<Navigate to="/workout" replace />} />
       </Routes>

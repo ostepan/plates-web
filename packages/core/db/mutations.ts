@@ -249,3 +249,38 @@ export async function startProgramDay(programDayId: ID): Promise<ID | null> {
   if (!day?.routineId) return null;
   return startSessionFromRoutine(day.routineId, { programDayId });
 }
+
+// ---- Recovery -------------------------------------------------------------
+
+export interface RecoveryCheckInInput {
+  sleepQuality: number;
+  nutritionQuality: number;
+  stressLevel: number;
+  energyLevel: number;
+  sorenessLevel: number;
+  notes?: string;
+  date?: number;
+}
+
+/** Upsert today's recovery check-in (one per calendar day). */
+export async function saveRecoveryCheckIn(input: RecoveryCheckInInput): Promise<void> {
+  const date = input.date ?? now();
+  const start = Math.floor(date / 86_400_000) * 86_400_000;
+  const existing = (await db.recoveryFactors.toArray()).find(
+    (f) => Math.floor(f.date / 86_400_000) * 86_400_000 === start,
+  );
+  const t = now();
+  const fields = {
+    sleepQuality: input.sleepQuality,
+    nutritionQuality: input.nutritionQuality,
+    stressLevel: input.stressLevel,
+    energyLevel: input.energyLevel,
+    sorenessLevel: input.sorenessLevel,
+    notes: input.notes ?? "",
+  };
+  if (existing) {
+    await db.recoveryFactors.update(existing.id, { ...fields, updatedAt: t });
+  } else {
+    await db.recoveryFactors.add({ id: newId(), date, ...fields, createdAt: t, updatedAt: t });
+  }
+}

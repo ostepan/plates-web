@@ -1,7 +1,7 @@
 import { useLiveQuery } from "dexie-react-hooks";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { ChevronRight } from "lucide-react";
+import { ChevronRight, HeartPulse } from "lucide-react";
 import { consistency, overviewStats } from "@core/db/analytics";
 import { weightUnit } from "@app/lib/format";
 import { ConsistencyHeatmap } from "@app/components/ConsistencyHeatmap";
@@ -28,15 +28,23 @@ export function OverviewSegment() {
         <ConsistencyHeatmap data={days} />
       </div>
 
-      <button
-        type="button"
-        onClick={() => navigate("/history")}
-        className="flex w-full items-center justify-between border-t border-hairline pt-4 text-left"
-      >
-        <span className="font-display font-bold text-ink">{t("History")}</span>
-        <ChevronRight size={18} className="text-ink3" strokeWidth={2.5} />
-      </button>
+      <div className="-mx-[22px] divide-y divide-hairline border-t border-hairline">
+        <NavRow icon={<HeartPulse size={18} className="text-accent" strokeWidth={2.25} />} label={t("Recovery")} onClick={() => navigate("/recovery")} />
+        <NavRow label={t("History")} onClick={() => navigate("/history")} />
+      </div>
     </div>
+  );
+}
+
+function NavRow({ icon, label, onClick }: { icon?: React.ReactNode; label: string; onClick: () => void }) {
+  return (
+    <button type="button" onClick={onClick} className="flex w-full items-center justify-between px-[22px] py-4 text-left active:bg-chip">
+      <span className="flex items-center gap-3 font-display font-bold text-ink">
+        {icon}
+        {label}
+      </span>
+      <ChevronRight size={18} className="text-ink3" strokeWidth={2.5} />
+    </button>
   );
 }
 
