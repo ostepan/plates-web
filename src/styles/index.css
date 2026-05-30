@@ -1,0 +1,95 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ---- Geist (same typeface as the iOS app) ---- */
+@font-face {
+  font-family: "Geist";
+  font-weight: 400;
+  font-display: swap;
+  src: url("../../packages/ui/fonts/Geist-Regular.ttf") format("truetype");
+}
+@font-face {
+  font-family: "Geist";
+  font-weight: 500;
+  font-display: swap;
+  src: url("../../packages/ui/fonts/Geist-Medium.ttf") format("truetype");
+}
+@font-face {
+  font-family: "Geist";
+  font-weight: 600;
+  font-display: swap;
+  src: url("../../packages/ui/fonts/Geist-SemiBold.ttf") format("truetype");
+}
+@font-face {
+  font-family: "Geist";
+  font-weight: 700;
+  font-display: swap;
+  src: url("../../packages/ui/fonts/Geist-Bold.ttf") format("truetype");
+}
+@font-face {
+  font-family: "Geist";
+  font-weight: 900;
+  font-display: swap;
+  src: url("../../packages/ui/fonts/Geist-Black.ttf") format("truetype");
+}
+@font-face {
+  font-family: "Geist Mono";
+  font-weight: 400;
+  font-display: swap;
+  src: url("../../packages/ui/fonts/GeistMono-Regular.ttf") format("truetype");
+}
+@font-face {
+  font-family: "Geist Mono";
+  font-weight: 500;
+  font-display: swap;
+  src: url("../../packages/ui/fonts/GeistMono-Medium.ttf") format("truetype");
+}
+@font-face {
+  font-family: "Geist Mono";
+  font-weight: 600;
+  font-display: swap;
+  src: url("../../packages/ui/fonts/GeistMono-SemiBold.ttf") format("truetype");
+}
+@font-face {
+  font-family: "Geist Mono";
+  font-weight: 700;
+  font-display: swap;
+  src: url("../../packages/ui/fonts/GeistMono-Bold.ttf") format("truetype");
+}
+
+@layer base {
+  :root {
+    color-scheme: light;
+  }
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+  body {
+    @apply bg-bg text-ink font-sans antialiased;
+    margin: 0;
+    /* tabular numerals everywhere — stats, weights, timers */
+    font-variant-numeric: tabular-nums;
+    -webkit-tap-highlight-color: transparent;
+  }
+}
+
+@layer components {
+  /* uppercase tracked "eyebrow" label */
+  .eyebrow {
+    @apply font-display font-extrabold uppercase tracking-eyebrow text-[11px];
+  }
+  /* huge editorial display title */
+  .display-title {
+    @apply font-display font-black tracking-display2 leading-[0.95];
+  }
+  .mono-num {
+    @apply font-mono tabular-nums;
+  }
+  /* hairline rule */
+  .hairline-b {
+    @apply border-b border-hairline;
+  }
+}

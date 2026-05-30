@@ -1,0 +1,59 @@
+import Dexie, { type Table } from "dexie";
+import type {
+  BodyWeightEntry, Exercise, ID, Mesocycle, Microcycle, MuscleRecoveryHistoryPoint,
+  MuscleRecoveryStatus, MuscleVolumeTarget, Program, ProgramDay, RecoveryFactors,
+  RecoverySettings, Routine, RoutineExercise, Session, SessionExercise, SupersetGroup,
+  UserProfile, WorkoutSet,
+} from "../models/types";
+
+/**
+ * Local-first store — the web analog of the iOS SwiftData container. One object
+ * store per entity; relationships are foreign-key ids. Cascade deletes are
+ * enforced in `mutations.ts` transactions (IndexedDB has none of its own).
+ */
+export class PlatesDB extends Dexie {
+  exercises!: Table<Exercise, ID>;
+  routines!: Table<Routine, ID>;
+  routineExercises!: Table<RoutineExercise, ID>;
+  supersetGroups!: Table<SupersetGroup, ID>;
+  programs!: Table<Program, ID>;
+  mesocycles!: Table<Mesocycle, ID>;
+  microcycles!: Table<Microcycle, ID>;
+  programDays!: Table<ProgramDay, ID>;
+  sessions!: Table<Session, ID>;
+  sessionExercises!: Table<SessionExercise, ID>;
+  workoutSets!: Table<WorkoutSet, ID>;
+  bodyWeightEntries!: Table<BodyWeightEntry, ID>;
+  userProfile!: Table<UserProfile, ID>;
+  recoverySettings!: Table<RecoverySettings, ID>;
+  muscleVolumeTargets!: Table<MuscleVolumeTarget, ID>;
+  muscleRecoveryStatus!: Table<MuscleRecoveryStatus, ID>;
+  recoveryFactors!: Table<RecoveryFactors, ID>;
+  muscleRecoveryHistoryPoints!: Table<MuscleRecoveryHistoryPoint, ID>;
+
+  constructor() {
+    super("plates");
+    this.version(1).stores({
+      exercises: "id, muscleGroup, equipment, isCustom",
+      routines: "id, lastUsed, createdAt",
+      routineExercises: "id, routineId, order, supersetGroupId",
+      supersetGroups: "id, routineId",
+      programs: "id, isBuiltIn, isActive, name",
+      mesocycles: "id, programId, order",
+      microcycles: "id, mesocycleId, weekIndex",
+      programDays: "id, microcycleId, dayIndex, routineId",
+      sessions: "id, date, routineId, programDayID",
+      sessionExercises: "id, sessionId, order",
+      workoutSets: "id, sessionExerciseId, order",
+      bodyWeightEntries: "id, date",
+      userProfile: "id",
+      recoverySettings: "id",
+      muscleVolumeTargets: "id, &muscleGroup",
+      muscleRecoveryStatus: "id, &muscleGroup",
+      recoveryFactors: "id, date",
+      muscleRecoveryHistoryPoints: "id, muscleGroup, date",
+    });
+  }
+}
+
+export const db = new PlatesDB();
