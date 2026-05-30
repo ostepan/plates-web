@@ -38,7 +38,7 @@ export class PlatesDB extends Dexie {
       routines: "id, lastUsed, createdAt",
       routineExercises: "id, routineId, order, supersetGroupId",
       supersetGroups: "id, routineId",
-      programs: "id, isBuiltIn, isActive, name",
+      programs: "id, name",
       mesocycles: "id, programId, order",
       microcycles: "id, mesocycleId, weekIndex",
       programDays: "id, microcycleId, dayIndex, routineId",

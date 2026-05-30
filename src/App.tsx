@@ -12,6 +12,8 @@ import { ActiveWorkout } from "./routes/ActiveWorkout";
 import { SessionSummary } from "./routes/SessionSummary";
 import { History } from "./routes/History";
 import { SessionDetail } from "./routes/SessionDetail";
+import { ProgramsList } from "./routes/ProgramsList";
+import { ProgramDetail } from "./routes/ProgramDetail";
 
 function TabLayout() {
   return (
@@ -55,6 +57,8 @@ export function App() {
         <Route path="/workout/routine/:id/edit" element={<RoutineEditor />} />
         <Route path="/active/:sessionId" element={<ActiveWorkout />} />
         <Route path="/summary/:sessionId" element={<SessionSummary />} />
+        <Route path="/programs" element={<ProgramsList />} />
+        <Route path="/programs/:id" element={<ProgramDetail />} />
         <Route path="/history" element={<History />} />
         <Route path="/history/:sessionId" element={<SessionDetail />} />
 

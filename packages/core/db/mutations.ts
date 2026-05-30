@@ -68,7 +68,10 @@ export async function deleteRoutine(routineId: ID): Promise<void> {
 // ---- Session lifecycle ----------------------------------------------------
 
 /** Create an in-progress Session from a routine, pre-seeding target sets. */
-export async function startSessionFromRoutine(routineId: ID): Promise<ID> {
+export async function startSessionFromRoutine(
+  routineId: ID,
+  opts?: { programDayId?: ID },
+): Promise<ID> {
   const routine = await db.routines.get(routineId);
   const res = (await db.routineExercises.where("routineId").equals(routineId).toArray())
     .sort((a, b) => a.order - b.order);
@@ -84,6 +87,7 @@ export async function startSessionFromRoutine(routineId: ID): Promise<ID> {
     notes: "",
     warmupNotes: "",
     totalVolume: 0,
+    programDayID: opts?.programDayId,
     wasDeloadAtStart: false,
     createdAt: t,
     updatedAt: t,
@@ -220,4 +224,28 @@ export async function unfinishedSession(): Promise<Session | undefined> {
   const open = (await db.sessions.where("durationSeconds").equals(0).toArray())
     .sort((a, b) => b.date - a.date);
   return open[0];
+}
+
+// ---- Programs -------------------------------------------------------------
+
+/** Activate a program; only one program is active at a time. */
+export async function activateProgram(programId: ID): Promise<void> {
+  await db.transaction("rw", db.programs, async () => {
+    // booleans aren't valid IndexedDB keys, so scan the (small) program set.
+    for (const p of await db.programs.toArray()) {
+      if (p.isActive && p.id !== programId) await db.programs.update(p.id, { isActive: false });
+    }
+    await db.programs.update(programId, { isActive: true, updatedAt: now() });
+  });
+}
+
+export async function deactivateProgram(programId: ID): Promise<void> {
+  await db.programs.update(programId, { isActive: false, updatedAt: now() });
+}
+
+/** Start a workout from a program-day (stamps the session with the day id). */
+export async function startProgramDay(programDayId: ID): Promise<ID | null> {
+  const day = await db.programDays.get(programDayId);
+  if (!day?.routineId) return null;
+  return startSessionFromRoutine(day.routineId, { programDayId });
 }
