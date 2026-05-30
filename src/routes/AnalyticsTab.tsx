@@ -1,48 +1,37 @@
-import { useLiveQuery } from "dexie-react-hooks";
-import { useNavigate } from "react-router-dom";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { ChevronRight, Clock } from "lucide-react";
-import { db } from "@core/db/db";
 import { IronTopBar } from "@ui/components/IronTopBar";
-import { IronEmptyState } from "@ui/components/IronEmptyState";
+import { IronSegmented } from "@ui/components/IronSegmented";
+import { OverviewSegment } from "./analytics/OverviewSegment";
+import { VolumeSegment } from "./analytics/VolumeSegment";
+import { ExerciseSegment } from "./analytics/ExerciseSegment";
+import { PRsSegment } from "./analytics/PRsSegment";
+
+type Segment = "overview" | "volume" | "exercise" | "prs";
 
 export function AnalyticsTab() {
   const { t } = useTranslation();
-  const navigate = useNavigate();
-  const sessionCount = useLiveQuery(() => db.sessions.where("durationSeconds").above(0).count(), [], 0);
+  const [segment, setSegment] = useState<Segment>("overview");
 
   return (
     <div className="flex h-full flex-col">
       <IronTopBar title={t("Analytics")} />
-
-      <button
-        type="button"
-        onClick={() => navigate("/history")}
-        className="flex items-center justify-between border-b border-hairline px-[22px] py-4 text-left active:bg-chip"
-      >
-        <div className="flex items-center gap-3">
-          <Clock size={18} className="text-ink3" strokeWidth={2.25} />
-          <span className="font-display font-bold text-ink">{t("History")}</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="mono-num text-[13px] text-ink3">{sessionCount}</span>
-          <ChevronRight size={18} className="text-ink3" strokeWidth={2.5} />
-        </div>
-      </button>
-
-      {sessionCount === 0 ? (
-        <IronEmptyState
-          eyebrow="STATS · 00"
-          title={t("Finish your first\nworkout")}
-          body={t(
-            "Finish your first workout to start building stats, streak, and consistency heatmap.",
-          )}
-        />
-      ) : (
-        <div className="flex flex-1 items-center justify-center px-[22px]">
-          <p className="text-[13px] text-ink2">{t("Charts land in the next milestone.")}</p>
-        </div>
-      )}
+      <IronSegmented<Segment>
+        value={segment}
+        onChange={setSegment}
+        options={[
+          { value: "overview", label: t("OVERVIEW") },
+          { value: "volume", label: t("VOLUME") },
+          { value: "exercise", label: t("CHART") },
+          { value: "prs", label: t("PRS") },
+        ]}
+      />
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        {segment === "overview" && <OverviewSegment />}
+        {segment === "volume" && <VolumeSegment />}
+        {segment === "exercise" && <ExerciseSegment />}
+        {segment === "prs" && <PRsSegment />}
+      </div>
     </div>
   );
 }

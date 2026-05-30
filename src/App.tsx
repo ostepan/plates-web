@@ -1,11 +1,13 @@
-import { useEffect, useState } from "react";
+import { Suspense, lazy, useEffect, useState } from "react";
 import { BrowserRouter, Navigate, Outlet, Route, Routes } from "react-router-dom";
 import { IronTabBar } from "@ui/components/IronTabBar";
 import { seedIfNeeded } from "@core/db/seed";
 import { WorkoutTab } from "./routes/WorkoutTab";
 import { ExercisesTab } from "./routes/ExercisesTab";
-import { AnalyticsTab } from "./routes/AnalyticsTab";
 import { ProfileTab } from "./routes/ProfileTab";
+
+// Analytics pulls in Recharts/d3 — load it on demand to keep the initial bundle small.
+const AnalyticsTab = lazy(() => import("./routes/AnalyticsTab").then((m) => ({ default: m.AnalyticsTab })));
 import { RoutineDetail } from "./routes/RoutineDetail";
 import { RoutineEditor } from "./routes/RoutineEditor";
 import { ActiveWorkout } from "./routes/ActiveWorkout";
@@ -43,6 +45,13 @@ export function App() {
 
   return (
     <BrowserRouter>
+      <Suspense
+        fallback={
+          <div className="grid h-[100dvh] place-items-center bg-bg">
+            <span className="eyebrow text-ink3">···</span>
+          </div>
+        }
+      >
       <Routes>
         {/* Tabbed surfaces */}
         <Route element={<TabLayout />}>
@@ -64,6 +73,7 @@ export function App() {
 
         <Route path="*" element={<Navigate to="/workout" replace />} />
       </Routes>
+      </Suspense>
     </BrowserRouter>
   );
 }

@@ -1,6 +1,6 @@
 import { db } from "./db";
 import type {
-  Exercise, ID, Mesocycle, Microcycle, Program, ProgramDay, Routine, RoutineExercise,
+  Exercise, ID, Mesocycle, Microcycle, MuscleVolumeTarget, Program, ProgramDay, Routine, RoutineExercise,
 } from "../models/types";
 import type { Equipment, Mechanic, MuscleGroup, ProgressionRule } from "../models/enums";
 import exercisesJson from "../seed/exercises.json";
@@ -103,10 +103,27 @@ async function expandPrograms(): Promise<void> {
   );
 }
 
+// RP-style per-muscle MEV/MAV/MRV sets/week (port of MuscleVolumeTargetSeedLoader).
+const VOLUME_TARGETS: [MuscleGroup, number, number, number][] = [
+  ["chest", 10, 14, 22], ["back", 10, 16, 25], ["shoulders", 8, 16, 26],
+  ["biceps", 6, 12, 20], ["triceps", 4, 10, 18], ["forearms", 2, 6, 14],
+  ["legs", 8, 14, 20], ["glutes", 0, 8, 16], ["calves", 8, 12, 18], ["abs", 0, 10, 22],
+];
+
+async function seedVolumeTargets(): Promise<void> {
+  const existing = new Set((await db.muscleVolumeTargets.toArray()).map((t) => t.muscleGroup));
+  const t = now();
+  const toAdd: MuscleVolumeTarget[] = VOLUME_TARGETS.filter(([m]) => !existing.has(m)).map(
+    ([muscleGroup, mev, mav, mrv]) => ({ id: newId(), muscleGroup, mev, mav, mrv, createdAt: t, updatedAt: t }),
+  );
+  if (toAdd.length) await db.muscleVolumeTargets.bulkAdd(toAdd);
+}
+
 /** First-run seeding — idempotent (only seeds empty tables / new program names). */
 export async function seedIfNeeded(): Promise<void> {
   if ((await db.exercises.count()) === 0) {
     await db.exercises.bulkAdd((exercisesJson as ExerciseSeed[]).map(toExercise));
   }
   await expandPrograms();
+  await seedVolumeTargets();
 }
