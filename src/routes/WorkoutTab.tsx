@@ -65,7 +65,7 @@ export function WorkoutTab() {
 
       {routines === undefined ? null : routines.length === 0 ? (
         <IronEmptyState
-          eyebrow="ROUTINES · 00"
+          eyebrow={t("ROUTINES · 00")}
           title={t("Build your\nfirst routine")}
           body={t(
             "Pick exercises, set target reps and rest. Reuse from the workout tab whenever you're ready to lift.",

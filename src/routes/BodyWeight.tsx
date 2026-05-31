@@ -68,7 +68,7 @@ export function BodyWeight() {
 
       {entries === undefined ? null : entries.length === 0 ? (
         <IronEmptyState
-          eyebrow="BODY WEIGHT · 00"
+          eyebrow={t("BODY WEIGHT · 00")}
           title={t("No weigh-ins\nyet")}
           body={t("Track your weigh-ins and we'll surface 7-day averages + trend deltas on the dashboard.")}
         />

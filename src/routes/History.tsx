@@ -30,7 +30,7 @@ export function History() {
       />
       {sessions === undefined ? null : sessions.length === 0 ? (
         <IronEmptyState
-          eyebrow="HISTORY · 00"
+          eyebrow={t("HISTORY · 00")}
           title={t("No history\nyet")}
           body={t(
             "Finish your first workout and it'll land here — sortable by month, searchable by exercise or routine name.",

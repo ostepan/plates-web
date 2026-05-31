@@ -29,6 +29,9 @@ void i18n.use(initReactI18next).init({
   interpolation: { escapeValue: false },
 });
 
+// keep <html lang> in sync for assistive tech + correct hyphenation
+document.documentElement.lang = initialLang();
+
 export function setLanguage(lang: Lang): void {
   localStorage.setItem(STORAGE_KEY, lang);
   void i18n.changeLanguage(lang);

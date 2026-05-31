@@ -9,7 +9,13 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: "autoUpdate",
-      includeAssets: ["favicon.svg"],
+      includeAssets: ["favicon.svg", "icon-192.png", "icon-512.png"],
+      workbox: {
+        // SPA: serve the shell for any unmatched navigation (offline deep links)
+        navigateFallback: "index.html",
+        globPatterns: ["**/*.{js,css,html,svg,ttf,woff2}"],
+        maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
+      },
       manifest: {
         name: "Plates",
         short_name: "Plates",
@@ -19,8 +25,9 @@ export default defineConfig({
         display: "standalone",
         orientation: "portrait",
         icons: [
-          { src: "icon-192.png", sizes: "192x192", type: "image/png" },
-          { src: "icon-512.png", sizes: "512x512", type: "image/png" },
+          { src: "icon-192.png", sizes: "192x192", type: "image/png", purpose: "any" },
+          { src: "icon-512.png", sizes: "512x512", type: "image/png", purpose: "any" },
+          { src: "icon-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
         ],
       },
     }),

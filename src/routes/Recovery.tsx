@@ -47,7 +47,7 @@ export function Recovery() {
 
       {rows === undefined ? null : rows.length === 0 ? (
         <IronEmptyState
-          eyebrow="RECOVERY · 00"
+          eyebrow={t("RECOVERY · 00")}
           title={t("No recovery\ndata yet")}
           body={t("Complete a workout that trains this muscle, then check back over the next few days.")}
         />
@@ -143,6 +143,7 @@ function CheckInModal({ onClose }: { onClose: () => void }) {
               type="range"
               min={1}
               max={10}
+              aria-label={t(f.titleKey)}
               value={vals[f.key]}
               onChange={(e) => setVals((v) => ({ ...v, [f.key]: Number(e.target.value) }))}
               className="w-full accent-ink"

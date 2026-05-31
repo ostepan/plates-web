@@ -1,15 +1,17 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { ChevronRight, Calculator, Scale, Target, DatabaseBackup } from "lucide-react";
+import { ChevronRight, Calculator, Scale, Target, DatabaseBackup, Download } from "lucide-react";
 import { LANGS, setLanguage, type Lang } from "@core/i18n/i18n";
 import { IronTopBar } from "@ui/components/IronTopBar";
 import { setWeightUnit, weightUnit } from "@app/lib/format";
+import { useInstallPrompt } from "@app/hooks/useInstallPrompt";
 
 export function ProfileTab() {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const [unit, setUnit] = useState<"kg" | "lb">(weightUnit());
+  const { canInstall, promptInstall } = useInstallPrompt();
 
   return (
     <div className="flex h-full flex-col">
@@ -39,6 +41,9 @@ export function ProfileTab() {
           <Row icon={<Scale size={18} strokeWidth={2.25} />} label={t("Body weight")} onClick={() => navigate("/profile/body-weight")} />
           <Row icon={<Target size={18} strokeWidth={2.25} />} label={t("Volume targets")} onClick={() => navigate("/profile/volume-targets")} />
           <Row icon={<DatabaseBackup size={18} strokeWidth={2.25} />} label={t("Backup")} onClick={() => navigate("/profile/backup")} />
+          {canInstall && (
+            <Row icon={<Download size={18} strokeWidth={2.25} />} label={t("Install app")} onClick={() => void promptInstall()} />
+          )}
         </div>
       </div>
     </div>
