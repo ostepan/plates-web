@@ -3,9 +3,9 @@
 // ActiveWorkoutFactory / ActiveWorkoutModel.
 import { db } from "./db";
 import type {
-  ID, Routine, RoutineExercise, Session, SessionExercise, WorkoutSet,
+  BodyWeightEntry, ID, MuscleVolumeTarget, Routine, RoutineExercise, Session, SessionExercise, WorkoutSet,
 } from "../models/types";
-import type { SetKind } from "../models/enums";
+import type { SetKind, WeightUnit } from "../models/enums";
 
 const newId = (): ID => crypto.randomUUID();
 const now = (): number => Date.now();
@@ -283,4 +283,31 @@ export async function saveRecoveryCheckIn(input: RecoveryCheckInInput): Promise<
   } else {
     await db.recoveryFactors.add({ id: newId(), date, ...fields, createdAt: t, updatedAt: t });
   }
+}
+
+// ---- Body weight ----------------------------------------------------------
+
+export async function addBodyWeight(
+  weight: number,
+  weightUnit: WeightUnit,
+  notes = "",
+  date = now(),
+): Promise<ID> {
+  const id = newId();
+  const entry: BodyWeightEntry = { id, date, weight, weightUnit, notes, createdAt: now() };
+  await db.bodyWeightEntries.add(entry);
+  return id;
+}
+
+export async function deleteBodyWeight(id: ID): Promise<void> {
+  await db.bodyWeightEntries.delete(id);
+}
+
+// ---- Volume targets -------------------------------------------------------
+
+export async function updateVolumeTarget(
+  id: ID,
+  patch: Partial<Pick<MuscleVolumeTarget, "mev" | "mav" | "mrv">>,
+): Promise<void> {
+  await db.muscleVolumeTargets.update(id, { ...patch, updatedAt: now() });
 }

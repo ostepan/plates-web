@@ -17,6 +17,11 @@ import { SessionDetail } from "./routes/SessionDetail";
 import { ProgramsList } from "./routes/ProgramsList";
 import { ProgramDetail } from "./routes/ProgramDetail";
 import { Recovery } from "./routes/Recovery";
+import { PlateCalculator } from "./routes/PlateCalculator";
+import { BodyWeight } from "./routes/BodyWeight";
+import { VolumeTargets } from "./routes/VolumeTargets";
+import { BackupRestore } from "./routes/BackupRestore";
+import { Onboarding, ONBOARDED_KEY } from "./routes/Onboarding";
 
 function TabLayout() {
   return (
@@ -31,6 +36,7 @@ function TabLayout() {
 
 export function App() {
   const [ready, setReady] = useState(false);
+  const [onboarded, setOnboarded] = useState(() => localStorage.getItem(ONBOARDED_KEY) === "true");
 
   useEffect(() => {
     void seedIfNeeded().then(() => setReady(true));
@@ -42,6 +48,10 @@ export function App() {
         <span className="eyebrow text-ink3">PLATES</span>
       </div>
     );
+  }
+
+  if (!onboarded) {
+    return <Onboarding onDone={() => setOnboarded(true)} />;
   }
 
   return (
@@ -72,6 +82,10 @@ export function App() {
         <Route path="/history" element={<History />} />
         <Route path="/history/:sessionId" element={<SessionDetail />} />
         <Route path="/recovery" element={<Recovery />} />
+        <Route path="/profile/plate-calculator" element={<PlateCalculator />} />
+        <Route path="/profile/body-weight" element={<BodyWeight />} />
+        <Route path="/profile/volume-targets" element={<VolumeTargets />} />
+        <Route path="/profile/backup" element={<BackupRestore />} />
 
         <Route path="*" element={<Navigate to="/workout" replace />} />
       </Routes>
