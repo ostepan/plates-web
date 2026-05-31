@@ -4,7 +4,10 @@ import { VitePWA } from "vite-plugin-pwa";
 import { fileURLToPath, URL } from "node:url";
 
 // https://vite.dev/config/
+// `PAGES_BASE` lets GitHub Pages serve under a subpath (e.g. "/Plates/").
+// Vercel/Netlify serve at root, so it stays "/".
 export default defineConfig({
+  base: process.env.PAGES_BASE || "/",
   plugins: [
     react(),
     VitePWA({

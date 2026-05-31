@@ -55,7 +55,7 @@ export function App() {
   }
 
   return (
-    <BrowserRouter>
+    <BrowserRouter basename={import.meta.env.BASE_URL}>
       <Suspense
         fallback={
           <div className="grid h-[100dvh] place-items-center bg-bg">
