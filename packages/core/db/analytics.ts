@@ -2,9 +2,34 @@ import { db } from "./db";
 import type { ID, Session } from "../models/types";
 import type { MuscleGroup } from "../models/enums";
 import { OneRM } from "../calc/oneRM";
-import type { Point } from "../calc/performance";
+import { Performance, type Point } from "../calc/performance";
 
 const DAY = 86_400_000;
+
+export interface SessionHighlights {
+  prs: { exerciseId: ID; e1rm: number }[];
+  plateaus: ID[];
+}
+
+/** PRs set + plateaus detected for a just-finished session (for the summary). */
+export async function sessionHighlights(sessionId: ID): Promise<SessionHighlights> {
+  const session = await db.sessions.get(sessionId);
+  if (!session) return { prs: [], plateaus: [] };
+  const sxs = await db.sessionExercises.where("sessionId").equals(sessionId).toArray();
+  const exerciseIds = [...new Set(sxs.map((s) => s.exerciseId).filter((x): x is ID => !!x))];
+
+  const prs: { exerciseId: ID; e1rm: number }[] = [];
+  const plateaus: ID[] = [];
+  for (const exId of exerciseIds) {
+    const series = await exerciseE1RMSeries(exId); // all finished sessions, incl. this one
+    if (!series.length) continue;
+    const current = series.find((p) => p.date === session.date)?.value ?? series[series.length - 1].value;
+    const priorMax = Math.max(0, ...series.filter((p) => p.date !== session.date).map((p) => p.value));
+    if (current > priorMax + 0.01) prs.push({ exerciseId: exId, e1rm: Math.round(current * 10) / 10 });
+    if (Performance.detectPlateau(series)) plateaus.push(exId);
+  }
+  return { prs, plateaus };
+}
 const dayStart = (ts: number) => Math.floor(ts / DAY) * DAY;
 
 async function finishedSessions(): Promise<Session[]> {

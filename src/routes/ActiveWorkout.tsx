@@ -8,6 +8,7 @@ import {
   addSet, discardSession, finishSession, lastCompletedSets, toggleSetComplete, updateSet,
 } from "@core/db/mutations";
 import type { Exercise, ID, WorkoutSet } from "@core/models/types";
+import type { SetKind } from "@core/models/enums";
 import { formatDuration, localizedExerciseName, weightUnit } from "@app/lib/format";
 import { useRestTimer } from "@app/hooks/useRestTimer";
 
@@ -103,10 +104,11 @@ export function ActiveWorkout() {
               {b.exercise ? localizedExerciseName(b.exercise, i18n.language) : "—"}
             </h2>
             <div className="px-[22px] pb-3">
-              <div className="grid grid-cols-[2rem_1fr_1fr_2.5rem] items-center gap-2 pb-1">
+              <div className="grid grid-cols-[2.2rem_1fr_1fr_2.4rem_2.5rem] items-center gap-2 pb-1">
                 <span className="eyebrow text-ink3 text-[9px]">{t("SET")}</span>
                 <span className="eyebrow text-ink3 text-[9px]">{unit.toUpperCase()}</span>
                 <span className="eyebrow text-ink3 text-[9px]">{t("REPS")}</span>
+                <span className="eyebrow text-ink3 text-[9px]">{t("RIR")}</span>
                 <span />
               </div>
               {b.sets.map((s, i) => (
@@ -155,6 +157,14 @@ function Stat({ label, value }: { label: string; value: string }) {
   );
 }
 
+const SET_KINDS: SetKind[] = ["working", "warmup", "dropset", "amrap", "restPause", "myoReps"];
+const KIND_ABBR: Record<SetKind, string> = {
+  working: "", warmup: "W", dropset: "D", amrap: "A", restPause: "RP", myoReps: "M",
+};
+const KIND_LABEL: Record<SetKind, string> = {
+  working: "Working", warmup: "Warm-up", dropset: "Drop set", amrap: "AMRAP", restPause: "Rest-pause", myoReps: "Myo-reps",
+};
+
 function SetRow({
   set,
   index,
@@ -166,14 +176,45 @@ function SetRow({
   ghost?: WorkoutSet;
   onComplete: (done: boolean) => void;
 }) {
+  const { t } = useTranslation();
   const [weight, setWeight] = useState(set.weight ? String(set.weight) : "");
   const [reps, setReps] = useState(set.reps ? String(set.reps) : "");
+  const [rir, setRir] = useState(set.rir != null ? String(set.rir) : "");
+  const [menu, setMenu] = useState(false);
 
   const ghostText = ghost ? `${ghost.weight}×${ghost.reps}` : "·";
 
   return (
-    <div className="grid grid-cols-[2rem_1fr_1fr_2.5rem] items-center gap-2 py-1">
-      <span className="mono-num text-ink3">{index + 1}</span>
+    <div className="grid grid-cols-[2.2rem_1fr_1fr_2.4rem_2.5rem] items-center gap-2 py-1">
+      <div className="relative">
+        <button
+          type="button"
+          aria-label={t("Set type")}
+          onClick={() => setMenu((v) => !v)}
+          className={`mono-num h-7 w-full text-[12px] ${
+            set.kind === "working" ? "text-ink3" : "border border-accent font-bold text-accent"
+          }`}
+        >
+          {set.kind === "working" ? index + 1 : KIND_ABBR[set.kind]}
+        </button>
+        {menu && (
+          <>
+            <div className="fixed inset-0 z-10" onClick={() => setMenu(false)} />
+            <div className="absolute left-0 top-7 z-20 w-32 border border-ink bg-card">
+              {SET_KINDS.map((k) => (
+                <button
+                  key={k}
+                  type="button"
+                  onClick={() => { void updateSet(set.id, { kind: k }); setMenu(false); }}
+                  className={`block w-full px-3 py-2 text-left text-[12px] ${k === set.kind ? "bg-chip font-bold text-ink" : "text-ink2"}`}
+                >
+                  {KIND_ABBR[k] ? `${KIND_ABBR[k]} · ` : ""}{t(KIND_LABEL[k])}
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
       <input
         inputMode="decimal"
         value={weight}
@@ -189,6 +230,14 @@ function SetRow({
         onChange={(e) => setReps(e.target.value)}
         onBlur={() => void updateSet(set.id, { reps: parseInt(reps, 10) || 0 })}
         className="mono-num w-full border border-rule bg-card px-2 py-1.5 text-[15px] text-ink outline-none focus:border-ink placeholder:text-ink3/60"
+      />
+      <input
+        inputMode="numeric"
+        value={rir}
+        placeholder={ghost?.rir != null ? String(ghost.rir) : "–"}
+        onChange={(e) => setRir(e.target.value)}
+        onBlur={() => void updateSet(set.id, { rir: rir.trim() === "" ? undefined : parseInt(rir, 10) || 0 })}
+        className="mono-num w-full border border-rule bg-card px-1 py-1.5 text-center text-[14px] text-ink outline-none focus:border-ink placeholder:text-ink3/50"
       />
       <button
         type="button"

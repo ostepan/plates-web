@@ -1,10 +1,12 @@
 import { useLiveQuery } from "dexie-react-hooks";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { CalendarDays, ChevronRight, Plus } from "lucide-react";
+import { CalendarDays, ChevronRight, HeartPulse, Plus } from "lucide-react";
 import { db } from "@core/db/db";
 import { createRoutine } from "@core/db/mutations";
 import { activeProgram, programOwnedRoutineIds } from "@core/db/queries";
+import { muscleRecovery } from "@core/db/recovery";
+import { MUSCLE_I18N_KEY } from "@core/models/enums";
 import { IronTopBar, IronToolbarButton } from "@ui/components/IronTopBar";
 import { IronEmptyState } from "@ui/components/IronEmptyState";
 import { relativeDay } from "@app/lib/format";
@@ -20,7 +22,8 @@ export function WorkoutTab() {
         .filter((r) => !owned.has(r.id))
         .sort((a, b) => (b.lastUsed ?? b.createdAt) - (a.lastUsed ?? a.createdAt));
       const program = await activeProgram();
-      return { routines, program };
+      const recovery = await muscleRecovery();
+      return { routines, program, lowest: recovery[0] };
     },
     [],
     undefined,
@@ -48,6 +51,25 @@ export function WorkoutTab() {
           </IronToolbarButton>
         }
       />
+
+      <button
+        type="button"
+        onClick={() => navigate("/recovery")}
+        className="mx-[22px] mt-4 flex items-center justify-between border border-rule bg-card px-4 py-3 text-left active:bg-chip"
+      >
+        <span className="flex items-center gap-3">
+          <HeartPulse size={18} className="text-accent" strokeWidth={2.25} />
+          <span className="font-display font-bold text-ink">{t("Recovery")}</span>
+        </span>
+        <span className="flex items-center gap-2">
+          {data?.lowest && (
+            <span className="mono-num text-[12px] text-ink3">
+              {t(MUSCLE_I18N_KEY[data.lowest.muscleGroup])} {Math.round(data.lowest.recoveryPercentage)}%
+            </span>
+          )}
+          <ChevronRight size={18} className="text-ink3" strokeWidth={2.5} />
+        </span>
+      </button>
 
       {data?.program && (
         <button
