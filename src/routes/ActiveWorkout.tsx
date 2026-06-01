@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { useNavigate, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { Check, MoreHorizontal, Plus } from "lucide-react";
+import { Check, Lightbulb, MoreHorizontal, Plus } from "lucide-react";
 import { db } from "@core/db/db";
 import {
   addSet, discardSession, finishSession, lastCompletedSets, toggleSetComplete, updateSet,
@@ -29,6 +29,13 @@ export function ActiveWorkout() {
   const { t, i18n } = useTranslation();
   const rest = useRestTimer();
   const unit = weightUnit();
+  const [openCues, setOpenCues] = useState<Set<ID>>(() => new Set());
+  const toggleCues = (sxId: ID) =>
+    setOpenCues((prev) => {
+      const next = new Set(prev);
+      next.has(sxId) ? next.delete(sxId) : next.add(sxId);
+      return next;
+    });
 
   const session = useLiveQuery(() => db.sessions.get(sessionId), [sessionId]);
   const blocks = useLiveQuery(
@@ -151,6 +158,17 @@ export function ActiveWorkout() {
                   <span className="font-display text-[17px] font-bold text-ink">
                     {b.exercise ? localizedExerciseName(b.exercise, i18n.language) : "—"}
                   </span>
+                  {b.exercise?.userNotes ? (
+                    <button
+                      type="button"
+                      onClick={() => toggleCues(b.sxId)}
+                      aria-label={t("Form cues")}
+                      aria-expanded={openCues.has(b.sxId)}
+                      className={`self-center ${openCues.has(b.sxId) ? "text-fade" : "text-ink3"}`}
+                    >
+                      <Lightbulb size={14} strokeWidth={2.25} />
+                    </button>
+                  ) : null}
                 </div>
                 {b.target && (
                   <span className="eyebrow text-ink3">
@@ -159,6 +177,11 @@ export function ActiveWorkout() {
                   </span>
                 )}
               </div>
+              {b.exercise?.userNotes && openCues.has(b.sxId) ? (
+                <p className="mx-[22px] mb-2 border-l-2 border-fade bg-fade/10 px-2.5 py-1.5 text-[13px] leading-relaxed text-ink2 whitespace-pre-line">
+                  {b.exercise.userNotes}
+                </p>
+              ) : null}
               <div className="mx-[22px] mb-2 flex items-center gap-2">
                 <span className="mono-num text-[10px] text-ink3">{doneSets}/{b.sets.length}</span>
                 <div className="h-1 flex-1 bg-chip">

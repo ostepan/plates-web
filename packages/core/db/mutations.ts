@@ -98,6 +98,29 @@ export async function deleteRoutine(routineId: ID): Promise<void> {
   });
 }
 
+// ---- Exercises ------------------------------------------------------------
+
+/** Save per-exercise form cues (user-authored). Works for stock + custom. */
+export async function updateExerciseNotes(id: ID, userNotes: string): Promise<void> {
+  await db.exercises.update(id, { userNotes, updatedAt: now() });
+}
+
+/**
+ * Delete a custom exercise and any routine references to it. Stock exercises
+ * are read-only. Past sessions keep their history (SessionExercise.exerciseId
+ * is a plain id, not a live relationship).
+ */
+export async function deleteExercise(id: ID): Promise<void> {
+  const ex = await db.exercises.get(id);
+  if (!ex || !ex.isCustom) return;
+  await db.transaction("rw", db.exercises, db.routineExercises, async () => {
+    // exerciseId isn't indexed — scan the (small) routineExercises set.
+    const refs = (await db.routineExercises.toArray()).filter((r) => r.exerciseId === id);
+    await db.routineExercises.bulkDelete(refs.map((r) => r.id));
+    await db.exercises.delete(id);
+  });
+}
+
 // ---- Session lifecycle ----------------------------------------------------
 
 /** Create an in-progress Session from a routine, pre-seeding target sets. */

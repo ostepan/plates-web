@@ -835,5 +835,9 @@
  "~1 day": "~1 den",
  "Δ": "Δ",
  "Δ ALL TIME": "Δ CELKEM",
- "↓ = lower-is-better; bar length shows direction-corrected average": "↓ = nižší je lepší; délka pruhu = průměr po opravě směru"
+ "↓ = lower-is-better; bar length shows direction-corrected average": "↓ = nižší je lepší; délka pruhu = průměr po opravě směru",
+ "Not found": "Nenalezeno",
+ "Delete exercise": "Smazat cvik",
+ "Delete this custom exercise?": "Smazat tento vlastní cvik?",
+ "Setup, form, reminders — just for you": "Nastavení, technika, připomínky — jen pro tebe"
 }

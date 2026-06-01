@@ -4,6 +4,7 @@ import { IronTabBar } from "@ui/components/IronTabBar";
 import { seedIfNeeded } from "@core/db/seed";
 import { WorkoutTab } from "./routes/WorkoutTab";
 import { ExercisesTab } from "./routes/ExercisesTab";
+import { ExerciseDetail } from "./routes/ExerciseDetail";
 import { ProfileTab } from "./routes/ProfileTab";
 
 // Analytics pulls in Recharts/d3 — load it on demand to keep the initial bundle small.
@@ -73,6 +74,7 @@ export function App() {
         </Route>
 
         {/* Full-screen flows */}
+        <Route path="/exercises/:id" element={<ExerciseDetail />} />
         <Route path="/workout/routine/:id" element={<RoutineDetail />} />
         <Route path="/workout/routine/:id/edit" element={<RoutineEditor />} />
         <Route path="/active/:sessionId" element={<ActiveWorkout />} />

@@ -591,5 +591,9 @@
  "vs prior 30d": "vs prior 30d",
  "Δ": "Δ",
  "Δ ALL TIME": "Δ ALL TIME",
- "↓ = lower-is-better; bar length shows direction-corrected average": "↓ = lower-is-better; bar length shows direction-corrected average"
+ "↓ = lower-is-better; bar length shows direction-corrected average": "↓ = lower-is-better; bar length shows direction-corrected average",
+ "Not found": "Not found",
+ "Delete exercise": "Delete exercise",
+ "Delete this custom exercise?": "Delete this custom exercise?",
+ "Setup, form, reminders — just for you": "Setup, form, reminders — just for you"
 }

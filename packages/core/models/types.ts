@@ -18,6 +18,8 @@ export interface Exercise {
   mechanic: Mechanic;
   instructionsEN?: string;
   instructionsCS?: string;
+  /** User-authored form cues — distinct from the read-only stock instructions. */
+  userNotes?: string;
   isCustom: boolean;
   defaultRestSeconds: number;
   createdAt: number;

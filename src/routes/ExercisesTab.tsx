@@ -1,7 +1,8 @@
 import { useMemo, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
+import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { Search } from "lucide-react";
+import { ChevronRight, Lightbulb, Search } from "lucide-react";
 import { db } from "@core/db/db";
 import {
   ALL_EQUIPMENT, ALL_MUSCLE_GROUPS, MUSCLE_I18N_KEY, type Equipment, type MuscleGroup,
@@ -12,6 +13,7 @@ import { localizedExerciseName } from "@app/lib/format";
 
 export function ExercisesTab() {
   const { t, i18n } = useTranslation();
+  const navigate = useNavigate();
   const [query, setQuery] = useState("");
   const [muscle, setMuscle] = useState<MuscleGroup | "all">("all");
   const [equip, setEquip] = useState<Equipment | "all">("all");
@@ -81,11 +83,25 @@ export function ExercisesTab() {
               </div>
               <ul className="divide-y divide-hairline">
                 {g.items.map((ex) => (
-                  <li key={ex.id} className="px-[22px] py-3">
-                    <p className="font-display font-semibold text-ink">{localizedExerciseName(ex, i18n.language)}</p>
-                    <p className="eyebrow text-ink3 mt-0.5">
-                      {t(`equipment.${ex.equipment}`)} · {t(`mechanic.${ex.mechanic}`)}
-                    </p>
+                  <li key={ex.id}>
+                    <button
+                      type="button"
+                      onClick={() => navigate(`/exercises/${ex.id}`)}
+                      className="flex w-full items-center justify-between px-[22px] py-3 text-left active:bg-chip"
+                    >
+                      <div className="min-w-0">
+                        <p className="flex items-center gap-1.5 font-display font-semibold text-ink">
+                          <span className="truncate">{localizedExerciseName(ex, i18n.language)}</span>
+                          {ex.userNotes ? (
+                            <Lightbulb size={12} strokeWidth={2.25} className="shrink-0 text-fade" />
+                          ) : null}
+                        </p>
+                        <p className="eyebrow text-ink3 mt-0.5">
+                          {t(`equipment.${ex.equipment}`)} · {t(`mechanic.${ex.mechanic}`)}
+                        </p>
+                      </div>
+                      <ChevronRight size={16} strokeWidth={2.25} className="shrink-0 text-ink3" />
+                    </button>
                   </li>
                 ))}
               </ul>
