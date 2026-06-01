@@ -1,18 +1,43 @@
 # Plates — Web
 
-Web (PWA) rebuild of the Plates iOS app. **Start with [`PLAN.md`](./PLAN.md).**
+A local-first **Progressive Web App** for serious lifters — routines, programs,
+workout logging, progress analytics, and recovery. A from-scratch web rebuild of
+the Plates iOS app, sharing its calculators, seed data, Czech/English copy, and
+the editorial **"Iron"** look (Geist type, cream + ink, flat/hairline).
 
-The original SwiftUI/SwiftData app lives on this same branch (`../App`, `../Packages`) as a
-reference — read it directly when porting a screen or calculator.
+Everything runs in the browser (IndexedDB) — **no account, works offline,
+installable**. See [`PLAN.md`](./PLAN.md) for the full design, and
+[`DEPLOY.md`](./DEPLOY.md) to ship it.
 
-## Already here (copied from iOS, reusable as-is)
-- `packages/core/seed/` — `exercises.json`, `programs.json` (seed data)
-- `packages/core/i18n/` — `cs.raw.json`, `en.raw.json` (763 translation keys → reshape to i18next)
-- `packages/ui/fonts/` — Geist + Geist Mono `.ttf` (the exact iOS typeface; free web font)
+## Run it
 
-## Recommended stack
-React + Vite + TypeScript · Tailwind (Iron preset) · Dexie/IndexedDB (local-first) ·
-Zustand · Recharts/visx · i18next · vite-plugin-pwa. See `PLAN.md §3`.
+```bash
+npm install
+npm run dev        # http://localhost:5173
+npm run build      # production build → dist/
+npm run test       # Vitest: calculator parity + IndexedDB integration tests
+npm run e2e        # Playwright smoke tests (needs `npx playwright install chromium`)
+```
 
-## Status
-Planning only — no app scaffolded yet. Next steps in `PLAN.md §13`.
+## Stack
+React + Vite + TypeScript · Tailwind (Iron preset) · **Dexie/IndexedDB** (local-first)
+· Zustand · **Recharts** (code-split) · i18next (cs/en) · vite-plugin-pwa.
+
+## Structure
+```
+packages/
+  core/   # framework-free: TS models, Dexie schema + mutations, the ported
+          # calculators (1RM, plate, volume, plateau/velocity, recovery),
+          # backup, seed JSON, i18n bundles
+  ui/     # the Iron design system: Tailwind tokens, Geist fonts, components
+src/      # the SPA: routes, hooks, app shell
+tests/    # Playwright e2e
+```
+
+## Status — complete (M0–M6)
+Logging loop, programs, analytics, recovery, profile/backup, onboarding, and PWA
+polish are all built. **33 unit/integration tests + 2 e2e green.**
+
+> Local-first by design (matches the iOS app — single device, no sync). Optional
+> cloud sync is a documented later phase (`PLAN.md §12`). Background push and
+> haptics are best-effort on the web (`PLAN.md §9`).
