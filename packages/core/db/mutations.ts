@@ -57,6 +57,39 @@ export async function removeRoutineExercise(id: ID): Promise<void> {
   await db.routineExercises.delete(id);
 }
 
+/** Join the exercise into a superset with the one above it. */
+export async function groupWithPrevious(routineExerciseId: ID): Promise<void> {
+  const re = await db.routineExercises.get(routineExerciseId);
+  if (!re) return;
+  const ordered = (await db.routineExercises.where("routineId").equals(re.routineId).toArray()).sort((a, b) => a.order - b.order);
+  const idx = ordered.findIndex((r) => r.id === routineExerciseId);
+  if (idx <= 0) return;
+  const prev = ordered[idx - 1];
+  if (prev.supersetGroupId) {
+    await db.routineExercises.update(routineExerciseId, { supersetGroupId: prev.supersetGroupId });
+  } else {
+    const key = newId();
+    await db.routineExercises.update(prev.id, { supersetGroupId: key });
+    await db.routineExercises.update(routineExerciseId, { supersetGroupId: key });
+  }
+}
+
+/** Remove the exercise from its superset; drops any members left with no neighbor. */
+export async function ungroupRoutineExercise(routineExerciseId: ID): Promise<void> {
+  const re = await db.routineExercises.get(routineExerciseId);
+  if (!re) return;
+  const key = re.supersetGroupId;
+  await db.routineExercises.update(routineExerciseId, { supersetGroupId: undefined });
+  if (!key) return;
+  const after = (await db.routineExercises.where("routineId").equals(re.routineId).toArray()).sort((a, b) => a.order - b.order);
+  for (let i = 0; i < after.length; i++) {
+    if (after[i].supersetGroupId !== key) continue;
+    const prev = i > 0 && after[i - 1].supersetGroupId === key;
+    const next = i < after.length - 1 && after[i + 1].supersetGroupId === key;
+    if (!prev && !next) await db.routineExercises.update(after[i].id, { supersetGroupId: undefined });
+  }
+}
+
 export async function deleteRoutine(routineId: ID): Promise<void> {
   await db.transaction("rw", db.routines, db.routineExercises, db.supersetGroups, async () => {
     await db.routineExercises.where("routineId").equals(routineId).delete();

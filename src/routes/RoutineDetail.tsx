@@ -6,6 +6,7 @@ import { db } from "@core/db/db";
 import { startSessionFromRoutine } from "@core/db/mutations";
 import { muscleRecovery } from "@core/db/recovery";
 import { MUSCLE_I18N_KEY } from "@core/models/enums";
+import { supersetBadge } from "@core/superset";
 import { IronTopBar, IronToolbarButton } from "@ui/components/IronTopBar";
 import { localizedExerciseName, relativeDay } from "@app/lib/format";
 
@@ -70,7 +71,7 @@ export function RoutineDetail() {
       <div className="min-h-0 flex-1 overflow-y-auto pb-28">
         <div className="px-[22px] pb-4 pt-2">
           <p className="eyebrow text-accent mb-1">
-            {[...muscles.slice(0, 2).map((m) => t(MUSCLE_I18N_KEY[m])), `${rows.length} ${t("EXERCISES")}`].join(" · ")}
+            {[...muscles.slice(0, 2).map((m) => t(MUSCLE_I18N_KEY[m])), `${rows.length} ${t(rows.length === 1 ? "EXERCISE" : "EXERCISES")}`].join(" · ")}
           </p>
           <h1 className="display-title text-[34px] text-ink">{routine?.name}.</h1>
           {routine?.lastUsed && (
@@ -100,10 +101,15 @@ export function RoutineDetail() {
         )}
 
         <ul className="divide-y divide-hairline border-y border-hairline">
-          {rows.map(({ re, ex }, i) => (
+          {rows.map(({ re, ex }, i) => {
+            const badge = supersetBadge(rows.map((r) => r.re), i);
+            return (
             <li key={re.id} className="flex items-baseline justify-between px-[22px] py-3.5">
               <div className="flex items-baseline gap-3">
                 <span className="mono-num w-6 text-ink3">{String(i + 1).padStart(2, "0")}</span>
+                {badge && (
+                  <span className="mono-num self-center border border-accent px-1 text-[10px] font-bold text-accent">{badge.label}</span>
+                )}
                 <span className="font-display font-semibold text-ink">
                   {ex ? localizedExerciseName(ex, i18n.language) : "—"}
                 </span>
@@ -112,7 +118,8 @@ export function RoutineDetail() {
                 {re.targetSets} × {re.targetRepsMin}–{re.targetRepsMax}
               </span>
             </li>
-          ))}
+            );
+          })}
         </ul>
       </div>
 

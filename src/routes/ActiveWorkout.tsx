@@ -9,6 +9,7 @@ import {
 } from "@core/db/mutations";
 import type { Exercise, ID, WorkoutSet } from "@core/models/types";
 import type { SetKind } from "@core/models/enums";
+import { supersetBadge } from "@core/superset";
 import { formatDuration, localizedExerciseName, weightUnit } from "@app/lib/format";
 import { useRestTimer } from "@app/hooks/useRestTimer";
 
@@ -19,6 +20,7 @@ interface Block {
   ghost: WorkoutSet[];
   restSeconds: number;
   target?: { sets: number; min: number; max: number };
+  supersetGroupId?: string;
 }
 
 export function ActiveWorkout() {
@@ -51,6 +53,7 @@ export function ActiveWorkout() {
             sxId: sx.id, exercise, sets, ghost,
             restSeconds: exercise?.defaultRestSeconds ?? 120,
             target: re ? { sets: re.targetSets, min: re.targetRepsMin, max: re.targetRepsMax } : undefined,
+            supersetGroupId: sx.supersetGroupID,
           };
         }),
       );
@@ -139,6 +142,12 @@ export function ActiveWorkout() {
               <div className="flex items-baseline justify-between px-[22px] pb-1.5 pt-4">
                 <div className="flex items-baseline gap-3">
                   <span className="mono-num text-ink3">{String(bi + 1).padStart(2, "0")}</span>
+                  {(() => {
+                    const badge = supersetBadge(blocks.map((x) => ({ supersetGroupId: x.supersetGroupId })), bi);
+                    return badge ? (
+                      <span className="mono-num self-center border border-accent px-1 text-[10px] font-bold text-accent">{badge.label}</span>
+                    ) : null;
+                  })()}
                   <span className="font-display text-[17px] font-bold text-ink">
                     {b.exercise ? localizedExerciseName(b.exercise, i18n.language) : "—"}
                   </span>

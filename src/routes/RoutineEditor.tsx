@@ -2,11 +2,13 @@ import { useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { useNavigate, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { Check, Plus, Trash2 } from "lucide-react";
+import { Check, Link, Plus, Trash2, Unlink } from "lucide-react";
 import { db } from "@core/db/db";
 import {
-  addExerciseToRoutine, removeRoutineExercise, renameRoutine, updateRoutineExercise,
+  addExerciseToRoutine, groupWithPrevious, removeRoutineExercise, renameRoutine,
+  ungroupRoutineExercise, updateRoutineExercise,
 } from "@core/db/mutations";
+import { isInSuperset, supersetBadge } from "@core/superset";
 import { IronTopBar, IronToolbarButton } from "@ui/components/IronTopBar";
 import { Stepper } from "@ui/components/Stepper";
 import { ExercisePicker } from "@app/components/ExercisePicker";
@@ -58,20 +60,38 @@ export function RoutineEditor() {
 
         <p className="eyebrow text-ink3 px-[22px] pb-2 pt-2">{t("EXERCISES")}</p>
         <ul className="divide-y divide-hairline border-y border-hairline">
-          {rows.map(({ re, ex }) => (
+          {rows.map(({ re, ex }, i) => {
+            const reItems = rows.map((r) => r.re);
+            const badge = supersetBadge(reItems, i);
+            const grouped = isInSuperset(reItems, i);
+            return (
             <li key={re.id} className="px-[22px] py-3.5">
               <div className="flex items-center justify-between">
-                <span className="font-display font-semibold text-ink">
+                <span className="flex items-center gap-2 font-display font-semibold text-ink">
+                  {badge && (
+                    <span className="mono-num border border-accent px-1 text-[10px] font-bold text-accent">{badge.label}</span>
+                  )}
                   {ex ? localizedExerciseName(ex, i18n.language) : "—"}
                 </span>
-                <button
-                  type="button"
-                  onClick={() => void removeRoutineExercise(re.id)}
-                  aria-label={t("Delete")}
-                  className="grid h-8 w-8 place-items-center text-ink3 active:text-bad"
-                >
-                  <Trash2 size={16} strokeWidth={2.25} />
-                </button>
+                <div className="flex items-center">
+                  {grouped ? (
+                    <button type="button" onClick={() => void ungroupRoutineExercise(re.id)} aria-label={t("Ungroup")} className="grid h-8 w-8 place-items-center text-accent">
+                      <Unlink size={15} strokeWidth={2.25} />
+                    </button>
+                  ) : i > 0 ? (
+                    <button type="button" onClick={() => void groupWithPrevious(re.id)} aria-label={t("Superset with above")} className="grid h-8 w-8 place-items-center text-ink3 active:text-ink">
+                      <Link size={15} strokeWidth={2.25} />
+                    </button>
+                  ) : null}
+                  <button
+                    type="button"
+                    onClick={() => void removeRoutineExercise(re.id)}
+                    aria-label={t("Delete")}
+                    className="grid h-8 w-8 place-items-center text-ink3 active:text-bad"
+                  >
+                    <Trash2 size={16} strokeWidth={2.25} />
+                  </button>
+                </div>
               </div>
               <div className="mt-2.5 flex flex-wrap items-center gap-x-5 gap-y-2">
                 <Field label={t("SETS")}>
@@ -93,7 +113,8 @@ export function RoutineEditor() {
                 </Field>
               </div>
             </li>
-          ))}
+            );
+          })}
         </ul>
 
         <button
