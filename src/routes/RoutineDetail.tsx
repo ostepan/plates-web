@@ -1,11 +1,13 @@
 import { useLiveQuery } from "dexie-react-hooks";
 import { useNavigate, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { ChevronLeft, Pencil, Play } from "lucide-react";
+import { Activity, ChevronLeft, Pencil, Play } from "lucide-react";
 import { db } from "@core/db/db";
 import { startSessionFromRoutine } from "@core/db/mutations";
+import { muscleRecovery } from "@core/db/recovery";
+import { MUSCLE_I18N_KEY } from "@core/models/enums";
 import { IronTopBar, IronToolbarButton } from "@ui/components/IronTopBar";
-import { localizedExerciseName } from "@app/lib/format";
+import { localizedExerciseName, relativeDay } from "@app/lib/format";
 
 export function RoutineDetail() {
   const { id = "" } = useParams();
@@ -23,8 +25,27 @@ export function RoutineDetail() {
     [id],
     [],
   );
+  const verdict = useLiveQuery(async () => {
+    const res = await db.routineExercises.where("routineId").equals(id).toArray();
+    const exs = (await db.exercises.bulkGet(res.map((r) => r.exerciseId))).filter((e) => !!e);
+    const muscles = [...new Set(exs.map((e) => e!.muscleGroup))];
+    if (!muscles.length) return null;
+    const recMap = new Map((await muscleRecovery()).map((r) => [r.muscleGroup, r.recoveryPercentage]));
+    const pcts = muscles.map((m) => recMap.get(m) ?? 100); // untrained = recovered
+    const readyCount = pcts.filter((p) => p >= 50).length;
+    const total = muscles.length;
+    const avg = pcts.reduce((a, b) => a + b, 0) / total;
+    const ratio = readyCount / total;
+    let label = "Ready to train", color = "text-ok";
+    if (ratio < 0.34) { label = "Not recommended"; color = "text-bad"; }
+    else if (ratio < 0.67) { label = "Consider modifying"; color = "text-warn"; }
+    else if (avg < 90) { label = "Mostly ready"; color = "text-ok"; }
+    return { label, color, readyCount, total };
+  }, [id]);
 
   if (routine === undefined) return null;
+
+  const muscles = [...new Set(rows.map((r) => r.ex?.muscleGroup).filter((m): m is NonNullable<typeof m> => !!m))];
 
   async function start() {
     const sessionId = await startSessionFromRoutine(id);
@@ -49,13 +70,34 @@ export function RoutineDetail() {
       <div className="min-h-0 flex-1 overflow-y-auto pb-28">
         <div className="px-[22px] pb-4 pt-2">
           <p className="eyebrow text-accent mb-1">
-            {rows.length} {t("EXERCISES")}
+            {[...muscles.slice(0, 2).map((m) => t(MUSCLE_I18N_KEY[m])), `${rows.length} ${t("EXERCISES")}`].join(" · ")}
           </p>
-          <h1 className="display-title text-[34px] text-ink">{routine?.name}</h1>
+          <h1 className="display-title text-[34px] text-ink">{routine?.name}.</h1>
+          {routine?.lastUsed && (
+            <p className="mt-1.5 text-[13px] text-ink2">
+              {t("Last performed")} {relativeDay(routine.lastUsed, i18n.language)}
+            </p>
+          )}
           {routine?.notes ? (
             <p className="mt-2 text-[13px] leading-relaxed text-ink2">{routine.notes}</p>
           ) : null}
         </div>
+
+        {verdict && (
+          <div className="mx-[22px] mb-4 flex items-center justify-between border border-rule bg-card px-4 py-3">
+            <div className="flex items-center gap-3">
+              <Activity size={18} className={verdict.color} strokeWidth={2.25} />
+              <div>
+                <p className="eyebrow text-ink3 text-[9px]">{t("RECOVERY VERDICT")}</p>
+                <p className={`font-display font-bold ${verdict.color}`}>{t(verdict.label)}</p>
+              </div>
+            </div>
+            <p className="mono-num text-right text-[12px] leading-tight text-ink3">
+              {verdict.readyCount}/{verdict.total}
+              <br />≥50%
+            </p>
+          </div>
+        )}
 
         <ul className="divide-y divide-hairline border-y border-hairline">
           {rows.map(({ re, ex }, i) => (
