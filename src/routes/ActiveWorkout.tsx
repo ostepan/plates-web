@@ -166,11 +166,12 @@ export function ActiveWorkout() {
                 </div>
               </div>
               <div className="px-[22px]">
-                <div className="grid grid-cols-[2.2rem_1fr_1fr_2.4rem_2.5rem] items-center gap-2 pb-1">
+                <div className="grid grid-cols-[2rem_1fr_1fr_1.9rem_2.9rem_2.1rem] items-center gap-1.5 pb-1">
                   <span className="eyebrow text-ink3 text-[9px]">{t("SET")}</span>
                   <span className="eyebrow text-ink3 text-[9px]">{unit.toUpperCase()}</span>
                   <span className="eyebrow text-ink3 text-[9px]">{t("REPS")}</span>
                   <span className="eyebrow text-ink3 text-[9px]">{t("RIR")}</span>
+                  <span className="eyebrow text-ink3 text-[9px]">{t("LAST")}</span>
                   <span />
                 </div>
                 {b.sets.map((s, i) => (
@@ -249,10 +250,18 @@ function SetRow({
   const [menu, setMenu] = useState(false);
 
   const ghostText = ghost ? `${ghost.weight}×${ghost.reps}` : "·";
+  const cur = (parseFloat(weight) || 0) * (parseInt(reps, 10) || 0);
+  const gVol = ghost ? ghost.weight * ghost.reps : 0;
+  const dir = !ghost ? "none" : cur === 0 ? "neutral" : cur > gVol ? "up" : cur < gVol ? "down" : "equal";
+  const ghostCls =
+    dir === "up" ? "border-ok/50 bg-ok/10 text-ok"
+      : dir === "down" ? "border-fade/50 bg-fade/10 text-fade"
+        : dir === "equal" ? "border-rule bg-chip text-ink3"
+          : "border-rule text-ink3";
 
   return (
     <div
-      className={`grid grid-cols-[2.2rem_1fr_1fr_2.4rem_2.5rem] items-center gap-2 py-1.5 ${
+      className={`grid grid-cols-[2rem_1fr_1fr_1.9rem_2.9rem_2.1rem] items-center gap-1.5 py-1.5 ${
         active ? "-mx-[22px] bg-accentSoft px-[22px]" : ""
       }`}
     >
@@ -291,7 +300,7 @@ function SetRow({
         placeholder={ghost ? String(ghost.weight) : "0"}
         onChange={(e) => setWeight(e.target.value)}
         onBlur={() => void updateSet(set.id, { weight: parseFloat(weight) || 0 })}
-        className="mono-num w-full border border-rule bg-card px-2 py-1.5 text-[15px] text-ink outline-none focus:border-ink placeholder:text-ink3/60"
+        className="mono-num w-full border border-rule bg-card px-1.5 py-1.5 text-[15px] text-ink outline-none focus:border-ink placeholder:text-ink3/60"
       />
       <input
         inputMode="numeric"
@@ -299,7 +308,7 @@ function SetRow({
         placeholder={ghost ? String(ghost.reps) : "0"}
         onChange={(e) => setReps(e.target.value)}
         onBlur={() => void updateSet(set.id, { reps: parseInt(reps, 10) || 0 })}
-        className="mono-num w-full border border-rule bg-card px-2 py-1.5 text-[15px] text-ink outline-none focus:border-ink placeholder:text-ink3/60"
+        className="mono-num w-full border border-rule bg-card px-1.5 py-1.5 text-[15px] text-ink outline-none focus:border-ink placeholder:text-ink3/60"
       />
       <input
         inputMode="numeric"
@@ -309,6 +318,22 @@ function SetRow({
         onBlur={() => void updateSet(set.id, { rir: rir.trim() === "" ? undefined : parseInt(rir, 10) || 0 })}
         className="mono-num w-full border border-rule bg-card px-1 py-1.5 text-center text-[14px] text-ink outline-none focus:border-ink placeholder:text-ink3/50"
       />
+      {ghost ? (
+        <button
+          type="button"
+          aria-label={`${t("Last")} ${ghostText}`}
+          onClick={() => {
+            setWeight(String(ghost.weight));
+            setReps(String(ghost.reps));
+            void updateSet(set.id, { weight: ghost.weight, reps: ghost.reps });
+          }}
+          className={`mono-num h-7 border px-0.5 text-[9px] font-semibold leading-none ${ghostCls}`}
+        >
+          {ghost.weight}×{ghost.reps}
+        </button>
+      ) : (
+        <span className="text-center text-ink3/40">·</span>
+      )}
       <button
         type="button"
         aria-label="complete set"
