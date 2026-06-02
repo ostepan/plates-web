@@ -622,5 +622,7 @@
  "bar": "bar",
  "per side": "per side",
  "off": "off",
- "ACTIVE PROGRAM": "ACTIVE PROGRAM"
+ "ACTIVE PROGRAM": "ACTIVE PROGRAM",
+ "Couldn't load this screen. Reload to try again.": "Couldn't load this screen. Reload to try again.",
+ "Reload": "Reload"
 }
