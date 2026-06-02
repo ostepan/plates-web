@@ -53,6 +53,29 @@ export class PlatesDB extends Dexie {
       recoveryFactors: "id, date",
       muscleRecoveryHistoryPoints: "id, muscleGroup, date",
     });
+
+    // v2 → v3 heal + harden the exercise library against double-seeding.
+    // A non-atomic count-then-insert in `seed.ts` could insert the ~165
+    // exercises twice (React StrictMode double-invokes the seeding effect),
+    // leaving duplicate rows. v2 deletes any such duplicates — keeping the
+    // first row per `nameKey` — so that v3 can build a *unique* `nameKey`
+    // index without a ConstraintError. The unique index then guarantees one
+    // row per exercise at the DB level, independent of the seeder. Dexie runs
+    // v2's upgrade before applying v3's schema, and a fresh DB is created
+    // directly at v3 (empty store, no upgrade) — so both paths are safe.
+    this.version(2).upgrade(async (tx) => {
+      const seen = new Set<string>();
+      const dupeIds: ID[] = [];
+      for (const e of await tx.table<Exercise, ID>("exercises").toArray()) {
+        if (seen.has(e.nameKey)) dupeIds.push(e.id);
+        else seen.add(e.nameKey);
+      }
+      if (dupeIds.length) await tx.table("exercises").bulkDelete(dupeIds);
+    });
+
+    this.version(3).stores({
+      exercises: "id, &nameKey, muscleGroup, equipment, isCustom",
+    });
   }
 }
 
