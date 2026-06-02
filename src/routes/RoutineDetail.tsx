@@ -1,10 +1,10 @@
 import { useLiveQuery } from "dexie-react-hooks";
 import { useNavigate, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { Activity, ChevronLeft, Pencil, Play } from "lucide-react";
+import { Activity, ArrowLeftRight, ChevronLeft, Pencil, Play } from "lucide-react";
 import { db } from "@core/db/db";
-import { startSessionFromRoutine } from "@core/db/mutations";
-import { muscleRecovery } from "@core/db/recovery";
+import { startSessionFromRoutine, updateRoutineExercise } from "@core/db/mutations";
+import { getSwapSuggestions, muscleRecovery } from "@core/db/recovery";
 import { MUSCLE_I18N_KEY } from "@core/models/enums";
 import { supersetBadge } from "@core/superset";
 import { IronTopBar, IronToolbarButton } from "@ui/components/IronTopBar";
@@ -37,20 +37,37 @@ export function RoutineDetail() {
     const total = muscles.length;
     const avg = pcts.reduce((a, b) => a + b, 0) / total;
     const ratio = readyCount / total;
-    let label = "Ready to train", color = "text-ok";
-    if (ratio < 0.34) { label = "Not recommended"; color = "text-bad"; }
-    else if (ratio < 0.67) { label = "Consider modifying"; color = "text-warn"; }
+    let label = "Ready to train", color = "text-ok", bg = "bg-ink";
+    const notRecommended = ratio < 0.34;
+    if (notRecommended) { label = "Not recommended"; color = "text-bad"; bg = "bg-bad"; }
+    else if (ratio < 0.67) { label = "Consider modifying"; color = "text-warn"; bg = "bg-warn"; }
     else if (avg < 90) { label = "Mostly ready"; color = "text-ok"; }
-    return { label, color, readyCount, total };
+    return { label, color, bg, readyCount, total, notRecommended };
   }, [id]);
+
+  const swaps = useLiveQuery(() => getSwapSuggestions(id), [id], []);
 
   if (routine === undefined) return null;
 
   const muscles = [...new Set(rows.map((r) => r.ex?.muscleGroup).filter((m): m is NonNullable<typeof m> => !!m))];
 
   async function start() {
+    if (
+      verdict?.notRecommended &&
+      !window.confirm(
+        t("This routine targets fatigued muscles ({{ready}}/{{total}} ready). Start anyway?", {
+          ready: verdict.readyCount,
+          total: verdict.total,
+        }),
+      )
+    )
+      return;
     const sessionId = await startSessionFromRoutine(id);
     navigate(`/active/${sessionId}`, { replace: true });
+  }
+
+  async function swap(routineExerciseId: string, exerciseId: string) {
+    await updateRoutineExercise(routineExerciseId, { exerciseId });
   }
 
   return (
@@ -121,6 +138,41 @@ export function RoutineDetail() {
             );
           })}
         </ul>
+
+        {swaps.length > 0 && (
+          <section className="mt-5">
+            <p className="eyebrow text-ink3 px-[22px] pb-2">{t("SUGGESTED SWAPS")}</p>
+            <ul className="divide-y divide-hairline border-y border-hairline">
+              {swaps.map((s) => (
+                <li key={s.routineExerciseId} className="px-[22px] py-3">
+                  <div className="flex items-baseline justify-between">
+                    <span className="font-display font-semibold text-ink">
+                      {localizedExerciseName(s.current, i18n.language)}
+                    </span>
+                    <span className="mono-num text-[11px] text-bad">
+                      {Math.round(s.currentRecovery)}% {t("rec")}
+                    </span>
+                  </div>
+                  <p className="eyebrow text-ink3 mb-1.5 mt-1">{t("FRESHER OPTIONS")}</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {s.candidates.map((c) => (
+                      <button
+                        key={c.exercise.id}
+                        type="button"
+                        onClick={() => void swap(s.routineExerciseId, c.exercise.id)}
+                        className="flex items-center gap-1.5 border border-rule bg-card px-2 py-1 text-[12px] text-ink active:bg-ink active:text-white"
+                      >
+                        <ArrowLeftRight size={11} strokeWidth={2.25} className="text-ink3" />
+                        {localizedExerciseName(c.exercise, i18n.language)}
+                        <span className="mono-num text-[10px] text-ok">{Math.round(c.recovery)}%</span>
+                      </button>
+                    ))}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
       </div>
 
       <div className="border-t border-rule p-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
@@ -128,7 +180,7 @@ export function RoutineDetail() {
           type="button"
           onClick={() => void start()}
           disabled={rows.length === 0}
-          className="flex w-full items-center justify-center gap-2 bg-ink py-4 text-white disabled:opacity-40"
+          className={`flex w-full items-center justify-center gap-2 py-4 text-white disabled:opacity-40 ${verdict?.bg ?? "bg-ink"}`}
         >
           <Play size={16} strokeWidth={2.5} fill="currentColor" />
           <span className="eyebrow text-[13px]">{t("START WORKOUT")}</span>

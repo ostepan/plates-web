@@ -1,5 +1,5 @@
 import { db } from "./db";
-import type { ID, RecoveryFactors } from "../models/types";
+import type { Exercise, ID, RecoveryFactors } from "../models/types";
 import type { MuscleGroup } from "../models/enums";
 import { Recovery, type RecoveryResult, type RecoveryVerdict } from "../calc/recovery";
 
@@ -81,4 +81,71 @@ export async function muscleRecovery(): Promise<MuscleRecovery[]> {
     out.push({ ...r, lastTrainedAt: info.date, daysSinceTrained, verdict: Recovery.verdict(r.recoveryPercentage, daysSinceTrained) });
   }
   return out.sort((a, b) => a.recoveryPercentage - b.recoveryPercentage);
+}
+
+export interface SwapCandidate {
+  exercise: Exercise;
+  recovery: number;
+}
+export interface SwapSuggestion {
+  routineExerciseId: ID;
+  current: Exercise;
+  currentRecovery: number;
+  candidates: SwapCandidate[];
+}
+
+/**
+ * For each routine exercise whose primary muscle is fatigued (recovery below
+ * `fatigueThreshold`), suggest fresher alternatives. Candidates target a
+ * different, more-recovered muscle (≥ `gate` percentage points fresher),
+ * ranked by recovery → same equipment → same mechanic, deduped to one per
+ * muscle so the picks are varied. Port of iOS `WorkoutRecommender.getSwapSuggestions`.
+ */
+export async function getSwapSuggestions(
+  routineId: ID,
+  opts?: { fatigueThreshold?: number; gate?: number; maxPerExercise?: number },
+): Promise<SwapSuggestion[]> {
+  const fatigueThreshold = opts?.fatigueThreshold ?? 50;
+  const gate = opts?.gate ?? 15;
+  const maxPer = opts?.maxPerExercise ?? 3;
+
+  const recMap = new Map((await muscleRecovery()).map((r) => [r.muscleGroup, r.recoveryPercentage]));
+  const recOf = (m: MuscleGroup) => recMap.get(m) ?? 100; // untrained = fully recovered
+
+  const res = (await db.routineExercises.where("routineId").equals(routineId).toArray()).sort(
+    (a, b) => a.order - b.order,
+  );
+  const allExercises = await db.exercises.toArray();
+
+  const out: SwapSuggestion[] = [];
+  for (const re of res) {
+    const current = allExercises.find((e) => e.id === re.exerciseId);
+    if (!current) continue;
+    const currentRecovery = recOf(current.muscleGroup);
+    if (currentRecovery >= fatigueThreshold) continue; // not fatigued — no swap needed
+
+    const ranked = allExercises
+      .filter((e) => e.id !== current.id)
+      .map((e) => ({ exercise: e, recovery: recOf(e.muscleGroup) }))
+      .filter((c) => c.recovery >= currentRecovery + gate) // freshness gate
+      .sort((a, b) => {
+        if (b.recovery !== a.recovery) return b.recovery - a.recovery;
+        const eq = Number(b.exercise.equipment === current.equipment) - Number(a.exercise.equipment === current.equipment);
+        if (eq !== 0) return eq;
+        return Number(b.exercise.mechanic === current.mechanic) - Number(a.exercise.mechanic === current.mechanic);
+      });
+
+    // one candidate per muscle group, for variety
+    const seen = new Set<MuscleGroup>();
+    const candidates: SwapCandidate[] = [];
+    for (const c of ranked) {
+      if (seen.has(c.exercise.muscleGroup)) continue;
+      seen.add(c.exercise.muscleGroup);
+      candidates.push(c);
+      if (candidates.length >= maxPer) break;
+    }
+
+    if (candidates.length) out.push({ routineExerciseId: re.id, current, currentRecovery, candidates });
+  }
+  return out;
 }
