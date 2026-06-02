@@ -357,19 +357,15 @@ export interface CustomProgramInput {
   days: CustomProgramDayInput[];
 }
 
+const clampWeeks = (w: number) => Math.max(1, Math.min(12, Math.round(w)));
+
 /**
  * Build a custom Program → Mesocycle → Microcycle[] → ProgramDay[] subtree.
  * Day templates are shared across every week (each Microcycle gets the same
  * set of days), mirroring the iOS CustomProgramEditor save flow.
  */
-export async function createCustomProgram(input: CustomProgramInput): Promise<ID> {
-  const t = now();
-  const weeks = Math.max(1, Math.min(12, Math.round(input.weeks)));
-  const programId = newId();
-  const program: Program = {
-    id: programId, name: input.name.trim(), author: "You", weeks,
-    notes: input.notes?.trim() ?? "", isBuiltIn: false, isActive: false, createdAt: t, updatedAt: t,
-  };
+function buildProgramSubtree(programId: ID, input: CustomProgramInput) {
+  const weeks = clampWeeks(input.weeks);
   const mesoId = newId();
   const meso: Mesocycle = {
     id: mesoId, programId, order: 0,
@@ -389,6 +385,26 @@ export async function createCustomProgram(input: CustomProgramInput): Promise<ID
       });
     });
   }
+  return { meso, micros, programDays, weeks };
+}
+
+/** Remove a program's mesocycle subtree (children first). Caller owns the txn. */
+async function wipeProgramSubtree(programId: ID): Promise<void> {
+  const mesoIds = (await db.mesocycles.where("programId").equals(programId).toArray()).map((m) => m.id);
+  const microIds = (await db.microcycles.where("mesocycleId").anyOf(mesoIds).toArray()).map((m) => m.id);
+  await db.programDays.where("microcycleId").anyOf(microIds).delete();
+  await db.microcycles.where("mesocycleId").anyOf(mesoIds).delete();
+  await db.mesocycles.where("programId").equals(programId).delete();
+}
+
+export async function createCustomProgram(input: CustomProgramInput): Promise<ID> {
+  const t = now();
+  const programId = newId();
+  const { meso, micros, programDays, weeks } = buildProgramSubtree(programId, input);
+  const program: Program = {
+    id: programId, name: input.name.trim(), author: "You", weeks,
+    notes: input.notes?.trim() ?? "", isBuiltIn: false, isActive: false, createdAt: t, updatedAt: t,
+  };
   await db.transaction("rw", [db.programs, db.mesocycles, db.microcycles, db.programDays], async () => {
     await db.programs.add(program);
     await db.mesocycles.add(meso);
@@ -398,22 +414,32 @@ export async function createCustomProgram(input: CustomProgramInput): Promise<ID
   return programId;
 }
 
+/** Edit a custom program: wipe its subtree and rebuild from input, preserving
+ *  the program row (id, isActive). Built-in programs are read-only. */
+export async function updateCustomProgram(programId: ID, input: CustomProgramInput): Promise<void> {
+  const existing = await db.programs.get(programId);
+  if (!existing || existing.isBuiltIn) return;
+  const t = now();
+  const { meso, micros, programDays, weeks } = buildProgramSubtree(programId, input);
+  await db.transaction("rw", [db.programs, db.mesocycles, db.microcycles, db.programDays], async () => {
+    await wipeProgramSubtree(programId);
+    await db.programs.update(programId, {
+      name: input.name.trim(), notes: input.notes?.trim() ?? "", weeks, updatedAt: t,
+    });
+    await db.mesocycles.add(meso);
+    await db.microcycles.bulkAdd(micros);
+    await db.programDays.bulkAdd(programDays);
+  });
+}
+
 /** Delete a custom program and its whole subtree. Sessions keep history. */
 export async function deleteProgram(programId: ID): Promise<void> {
   const program = await db.programs.get(programId);
   if (!program || program.isBuiltIn) return;
-  await db.transaction(
-    "rw",
-    [db.programs, db.mesocycles, db.microcycles, db.programDays],
-    async () => {
-      const mesoIds = (await db.mesocycles.where("programId").equals(programId).toArray()).map((m) => m.id);
-      const microIds = (await db.microcycles.where("mesocycleId").anyOf(mesoIds).toArray()).map((m) => m.id);
-      await db.programDays.where("microcycleId").anyOf(microIds).delete();
-      await db.microcycles.where("mesocycleId").anyOf(mesoIds).delete();
-      await db.mesocycles.where("programId").equals(programId).delete();
-      await db.programs.delete(programId);
-    },
-  );
+  await db.transaction("rw", [db.programs, db.mesocycles, db.microcycles, db.programDays], async () => {
+    await wipeProgramSubtree(programId);
+    await db.programs.delete(programId);
+  });
 }
 
 /** Activate a program; only one program is active at a time. */

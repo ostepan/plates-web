@@ -86,6 +86,7 @@ export function App() {
         <Route path="/programs" element={<ProgramsList />} />
         <Route path="/programs/new" element={<CustomProgramEditor />} />
         <Route path="/programs/:id" element={<ProgramDetail />} />
+        <Route path="/programs/:id/edit" element={<CustomProgramEditor />} />
         <Route path="/history" element={<History />} />
         <Route path="/history/:sessionId" element={<SessionDetail />} />
         <Route path="/recovery" element={<Recovery />} />

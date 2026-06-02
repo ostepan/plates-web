@@ -2,7 +2,7 @@ import "fake-indexeddb/auto";
 import { beforeAll, describe, expect, it } from "vitest";
 import { db } from "./db";
 import { seedIfNeeded } from "./seed";
-import { createCustomProgram, createRoutine, deleteProgram } from "./mutations";
+import { activateProgram, createCustomProgram, createRoutine, deleteProgram, updateCustomProgram } from "./mutations";
 
 describe("custom program editor", () => {
   beforeAll(async () => {
@@ -64,5 +64,46 @@ describe("custom program editor", () => {
     const builtIn = (await db.programs.toArray()).find((p) => p.isBuiltIn)!;
     await deleteProgram(builtIn.id);
     expect(await db.programs.get(builtIn.id)).toBeTruthy();
+  });
+
+  it("updateCustomProgram rebuilds the subtree and preserves the program row", async () => {
+    const r1 = await createRoutine("R1");
+    const r2 = await createRoutine("R2");
+    const pid = await createCustomProgram({
+      name: "V1", weeks: 3, progressionRule: "linear", linearStepKg: 2.5,
+      days: [{ name: "A", routineId: r1 }],
+    });
+    await activateProgram(pid);
+
+    await updateCustomProgram(pid, {
+      name: "V2", notes: "edited", weeks: 5, deloadWeekIndex: 4,
+      progressionRule: "rirBased", targetRIR: 1,
+      days: [{ name: "Push", routineId: r1 }, { name: "Pull", routineId: r2 }],
+    });
+
+    const p = await db.programs.get(pid);
+    expect(p).toMatchObject({ id: pid, name: "V2", notes: "edited", weeks: 5, isActive: true, isBuiltIn: false });
+
+    const mesos = await db.mesocycles.where("programId").equals(pid).toArray();
+    expect(mesos).toHaveLength(1);
+    expect(mesos[0]).toMatchObject({ progressionRule: "rirBased", targetRIR: 1 });
+
+    const micros = (await db.microcycles.where("mesocycleId").equals(mesos[0].id).toArray())
+      .sort((a, b) => a.weekIndex - b.weekIndex);
+    expect(micros).toHaveLength(5);
+    expect(micros.filter((m) => m.isDeload).map((m) => m.weekIndex)).toEqual([4]);
+
+    const days = await db.programDays.where("microcycleId").anyOf(micros.map((m) => m.id)).toArray();
+    expect(days).toHaveLength(10); // 5 weeks × 2 days
+  });
+
+  it("updateCustomProgram ignores built-in programs", async () => {
+    const builtIn = (await db.programs.toArray()).find((p) => p.isBuiltIn)!;
+    const beforeName = builtIn.name;
+    const r = await createRoutine("X");
+    await updateCustomProgram(builtIn.id, {
+      name: "Hacked", weeks: 1, progressionRule: "linear", days: [{ name: "A", routineId: r }],
+    });
+    expect((await db.programs.get(builtIn.id))?.name).toBe(beforeName);
   });
 });

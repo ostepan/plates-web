@@ -1,7 +1,7 @@
 import { useLiveQuery } from "dexie-react-hooks";
 import { useNavigate, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { ChevronLeft, Pause, Play, Trash2 } from "lucide-react";
+import { ChevronLeft, Pause, Pencil, Play, Trash2 } from "lucide-react";
 import { activateProgram, deactivateProgram, deleteProgram, startProgramDay } from "@core/db/mutations";
 import { loadProgram } from "@core/db/queries";
 import type { ProgressionRule } from "@core/models/enums";
@@ -48,9 +48,14 @@ export function ProgramDetail() {
         }
         trailing={
           program.isBuiltIn ? undefined : (
-            <IronToolbarButton onClick={() => void onDelete()} label={t("Delete")}>
-              <Trash2 size={16} strokeWidth={2.25} />
-            </IronToolbarButton>
+            <div className="flex items-center gap-1.5">
+              <IronToolbarButton onClick={() => navigate(`/programs/${id}/edit`)} label={t("Edit")}>
+                <Pencil size={16} strokeWidth={2.25} />
+              </IronToolbarButton>
+              <IronToolbarButton onClick={() => void onDelete()} label={t("Delete")}>
+                <Trash2 size={16} strokeWidth={2.25} />
+              </IronToolbarButton>
+            </div>
           )
         }
       />
