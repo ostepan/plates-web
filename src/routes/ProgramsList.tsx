@@ -1,7 +1,7 @@
 import { useLiveQuery } from "dexie-react-hooks";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { ChevronLeft } from "lucide-react";
+import { ChevronLeft, Plus } from "lucide-react";
 import { db } from "@core/db/db";
 import { IronTopBar, IronToolbarButton } from "@ui/components/IronTopBar";
 
@@ -42,6 +42,11 @@ export function ProgramsList() {
         leading={
           <IronToolbarButton onClick={() => navigate("/workout")} label={t("Back")}>
             <ChevronLeft size={18} strokeWidth={2.5} />
+          </IronToolbarButton>
+        }
+        trailing={
+          <IronToolbarButton tint="bg-accent" onClick={() => navigate("/programs/new")} label={t("New program")}>
+            <Plus size={18} strokeWidth={2.5} />
           </IronToolbarButton>
         }
       />

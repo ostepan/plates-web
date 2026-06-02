@@ -1,8 +1,8 @@
 import { useLiveQuery } from "dexie-react-hooks";
 import { useNavigate, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { ChevronLeft, Pause, Play } from "lucide-react";
-import { activateProgram, deactivateProgram, startProgramDay } from "@core/db/mutations";
+import { ChevronLeft, Pause, Play, Trash2 } from "lucide-react";
+import { activateProgram, deactivateProgram, deleteProgram, startProgramDay } from "@core/db/mutations";
 import { loadProgram } from "@core/db/queries";
 import type { ProgressionRule } from "@core/models/enums";
 import { IronTopBar, IronToolbarButton } from "@ui/components/IronTopBar";
@@ -32,6 +32,12 @@ export function ProgramDetail() {
     if (sessionId) navigate(`/active/${sessionId}`, { replace: true });
   }
 
+  async function onDelete() {
+    if (!window.confirm(t("Delete this program? Past sessions are kept."))) return;
+    await deleteProgram(id);
+    navigate("/programs", { replace: true });
+  }
+
   return (
     <div className="flex h-[100dvh] flex-col bg-bg">
       <IronTopBar
@@ -39,6 +45,13 @@ export function ProgramDetail() {
           <IronToolbarButton onClick={() => navigate("/programs")} label={t("Back")}>
             <ChevronLeft size={18} strokeWidth={2.5} />
           </IronToolbarButton>
+        }
+        trailing={
+          program.isBuiltIn ? undefined : (
+            <IronToolbarButton onClick={() => void onDelete()} label={t("Delete")}>
+              <Trash2 size={16} strokeWidth={2.25} />
+            </IronToolbarButton>
+          )
         }
       />
 

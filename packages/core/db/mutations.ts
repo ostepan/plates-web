@@ -3,9 +3,10 @@
 // ActiveWorkoutFactory / ActiveWorkoutModel.
 import { db } from "./db";
 import type {
-  BodyWeightEntry, Exercise, ID, MuscleVolumeTarget, Routine, RoutineExercise, Session, SessionExercise, WorkoutSet,
+  BodyWeightEntry, Exercise, ID, Mesocycle, Microcycle, MuscleVolumeTarget, Program, ProgramDay,
+  Routine, RoutineExercise, Session, SessionExercise, WorkoutSet,
 } from "../models/types";
-import type { Equipment, Mechanic, MuscleGroup, SetKind, WeightUnit } from "../models/enums";
+import type { Equipment, Mechanic, MuscleGroup, ProgressionRule, SetKind, WeightUnit } from "../models/enums";
 
 const newId = (): ID => crypto.randomUUID();
 const now = (): number => Date.now();
@@ -338,6 +339,82 @@ export async function unfinishedSession(): Promise<Session | undefined> {
 }
 
 // ---- Programs -------------------------------------------------------------
+
+export interface CustomProgramDayInput {
+  name: string;
+  routineId?: ID;
+}
+
+export interface CustomProgramInput {
+  name: string;
+  notes?: string;
+  weeks: number;
+  /** 0-based week index flagged as deload, or undefined for none. */
+  deloadWeekIndex?: number;
+  progressionRule: ProgressionRule;
+  linearStepKg?: number;
+  targetRIR?: number;
+  days: CustomProgramDayInput[];
+}
+
+/**
+ * Build a custom Program → Mesocycle → Microcycle[] → ProgramDay[] subtree.
+ * Day templates are shared across every week (each Microcycle gets the same
+ * set of days), mirroring the iOS CustomProgramEditor save flow.
+ */
+export async function createCustomProgram(input: CustomProgramInput): Promise<ID> {
+  const t = now();
+  const weeks = Math.max(1, Math.min(12, Math.round(input.weeks)));
+  const programId = newId();
+  const program: Program = {
+    id: programId, name: input.name.trim(), author: "You", weeks,
+    notes: input.notes?.trim() ?? "", isBuiltIn: false, isActive: false, createdAt: t, updatedAt: t,
+  };
+  const mesoId = newId();
+  const meso: Mesocycle = {
+    id: mesoId, programId, order: 0,
+    progressionRule: input.progressionRule,
+    linearStepKg: input.linearStepKg,
+    targetRIR: input.targetRIR,
+  };
+  const micros: Microcycle[] = [];
+  const programDays: ProgramDay[] = [];
+  for (let w = 0; w < weeks; w++) {
+    const microId = newId();
+    micros.push({ id: microId, mesocycleId: mesoId, weekIndex: w, isDeload: input.deloadWeekIndex === w });
+    input.days.forEach((d, di) => {
+      programDays.push({
+        id: newId(), microcycleId: microId, dayIndex: di + 1,
+        name: d.name.trim() || `Day ${di + 1}`, routineId: d.routineId,
+      });
+    });
+  }
+  await db.transaction("rw", [db.programs, db.mesocycles, db.microcycles, db.programDays], async () => {
+    await db.programs.add(program);
+    await db.mesocycles.add(meso);
+    await db.microcycles.bulkAdd(micros);
+    await db.programDays.bulkAdd(programDays);
+  });
+  return programId;
+}
+
+/** Delete a custom program and its whole subtree. Sessions keep history. */
+export async function deleteProgram(programId: ID): Promise<void> {
+  const program = await db.programs.get(programId);
+  if (!program || program.isBuiltIn) return;
+  await db.transaction(
+    "rw",
+    [db.programs, db.mesocycles, db.microcycles, db.programDays],
+    async () => {
+      const mesoIds = (await db.mesocycles.where("programId").equals(programId).toArray()).map((m) => m.id);
+      const microIds = (await db.microcycles.where("mesocycleId").anyOf(mesoIds).toArray()).map((m) => m.id);
+      await db.programDays.where("microcycleId").anyOf(microIds).delete();
+      await db.microcycles.where("mesocycleId").anyOf(mesoIds).delete();
+      await db.mesocycles.where("programId").equals(programId).delete();
+      await db.programs.delete(programId);
+    },
+  );
+}
 
 /** Activate a program; only one program is active at a time. */
 export async function activateProgram(programId: ID): Promise<void> {

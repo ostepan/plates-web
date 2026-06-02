@@ -18,6 +18,7 @@ import { History } from "./routes/History";
 import { SessionDetail } from "./routes/SessionDetail";
 import { ProgramsList } from "./routes/ProgramsList";
 import { ProgramDetail } from "./routes/ProgramDetail";
+import { CustomProgramEditor } from "./routes/CustomProgramEditor";
 import { Recovery } from "./routes/Recovery";
 import { PlateCalculator } from "./routes/PlateCalculator";
 import { BodyWeight } from "./routes/BodyWeight";
@@ -83,6 +84,7 @@ export function App() {
         <Route path="/active/:sessionId" element={<ActiveWorkout />} />
         <Route path="/summary/:sessionId" element={<SessionSummary />} />
         <Route path="/programs" element={<ProgramsList />} />
+        <Route path="/programs/new" element={<CustomProgramEditor />} />
         <Route path="/programs/:id" element={<ProgramDetail />} />
         <Route path="/history" element={<History />} />
         <Route path="/history/:sessionId" element={<SessionDetail />} />

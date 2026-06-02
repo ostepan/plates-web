@@ -844,5 +844,16 @@
  "Exercise name": "Název cviku",
  "Optional": "Volitelné",
  "How to perform it (optional)": "Jak cvik provádět (volitelné)",
- "Instructions (Czech)": "Postup (česky)"
+ "Instructions (Czech)": "Postup (česky)",
+ "Program name": "Název programu",
+ "Weeks": "Týdny",
+ "Week": "Týden",
+ "Linear step (kg)": "Lineární krok (kg)",
+ "Training days": "Tréninkové dny",
+ "Day": "Den",
+ "Move up": "Posunout nahoru",
+ "Move down": "Posunout dolů",
+ "Remove": "Odebrat",
+ "Create a routine first, then build a program from it.": "Nejprve vytvoř rutinu, pak z ní sestav program.",
+ "Delete this program? Past sessions are kept.": "Smazat tento program? Minulé tréninky zůstanou."
 }

@@ -33,6 +33,7 @@ Legend: ✅ done · 🟡 partial · ⬜ todo · ➖ N/A on web (platform).
 | **Form cues** (`userNotes`) — detail textarea autosave + active-workout lightbulb + list badge | `ExerciseDetail.tsx`, `ActiveWorkout.tsx`, `mutations.ts` |
 | Delete custom exercise (cascades routine refs) | `deleteExercise` in `mutations.ts` |
 | **Custom exercise editor** (`/exercises/new`, `/exercises/:id/edit`) — name EN/CS, primary/secondary, equipment, mechanic, rest, instructions | `CustomExerciseEditor.tsx`, `createCustomExercise`/`updateCustomExercise` |
+| **Custom program editor** (`/programs/new`) — name, notes, weeks, deload week, progression rule, day list w/ routine picker; delete custom program | `CustomProgramEditor.tsx`, `createCustomProgram`/`deleteProgram` |
 
 ## 🟡 Partial
 | Feature | iOS | Web gap |
@@ -46,12 +47,12 @@ Legend: ✅ done · 🟡 partial · ⬜ todo · ➖ N/A on web (platform).
 ## ⬜ Todo (real screens missing)
 | Feature | iOS source |
 |---|---|
-| **Custom program editor** | `CustomProgramEditor` (weeks, deload, rule, day list) |
 | **Compare exercises** analytics | `CompareExercisesView` |
 | **Recovery swap suggestions** on routine | `WorkoutRecommender.getSwapSuggestions` |
 | Confetti on summary | `ConfettiView` (canvas-confetti) |
+| Edit existing custom program | iOS CustomProgramEditor edit mode (web has create + delete) |
 
-> ~~Exercise detail + form cues + list nav~~, ~~Custom exercise editor~~ — **shipped** (see Done).
+> ~~Exercise detail + form cues + list nav~~, ~~Custom exercise editor~~, ~~Custom program editor (create)~~ — **shipped** (see Done).
 
 ## ➖ N/A on web (platform — needs replacement, not port)
 | iOS | Web stance |
@@ -67,7 +68,7 @@ Legend: ✅ done · 🟡 partial · ⬜ todo · ➖ N/A on web (platform).
 ## Suggested next build order
 1. ~~Exercise detail + form cues~~ — ✅ done.
 2. ~~Custom exercise editor~~ — ✅ done.
-3. **Custom program editor** (`/programs/new`).
+3. ~~Custom program editor (create + delete)~~ — ✅ done.
 4. **Recovery swaps + pre-start fatigue guard** on RoutineDetail (calc likely already there).
 5. **Compare exercises** analytics segment.
 6. **Confetti** + set **stopwatch** polish.
