@@ -5,6 +5,7 @@ import { CalendarDays, ChevronRight, HeartPulse, Plus } from "lucide-react";
 import { db } from "@core/db/db";
 import { createRoutine } from "@core/db/mutations";
 import { activeProgram, programOwnedRoutineIds } from "@core/db/queries";
+import { overviewStats } from "@core/db/analytics";
 import { muscleRecovery } from "@core/db/recovery";
 import { MUSCLE_I18N_KEY } from "@core/models/enums";
 import { IronTopBar, IronToolbarButton } from "@ui/components/IronTopBar";
@@ -23,11 +24,14 @@ export function WorkoutTab() {
         .sort((a, b) => (b.lastUsed ?? b.createdAt) - (a.lastUsed ?? a.createdAt));
       const program = await activeProgram();
       const recovery = await muscleRecovery();
-      return { routines, program, lowest: recovery[0] };
+      const stats = await overviewStats();
+      return { routines, program, lowest: recovery[0], streak: stats.streakDays };
     },
     [],
     undefined,
   );
+
+  const todayLabel = new Date().toLocaleDateString(i18n.language, { weekday: "long", month: "short", day: "numeric" });
 
   async function newRoutine() {
     const id = await createRoutine(t("New routine"));
@@ -51,6 +55,11 @@ export function WorkoutTab() {
           </IronToolbarButton>
         }
       />
+
+      <p className="eyebrow text-ink3 px-[22px] pt-3">
+        {todayLabel}
+        {data?.streak ? ` · ${data.streak}-${t("day streak")}` : ""}
+      </p>
 
       <button
         type="button"
@@ -78,7 +87,10 @@ export function WorkoutTab() {
           className="mx-[22px] mt-4 flex items-center justify-between border border-ink bg-ink px-4 py-3.5 text-left text-white"
         >
           <div>
-            <p className="eyebrow text-white/55">{t("ACTIVE PROGRAM")}</p>
+            <p className="eyebrow flex items-center gap-1.5 text-white/55">
+              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent" />
+              {t("ACTIVE PROGRAM")}
+            </p>
             <p className="font-display text-[16px] font-bold">{data.program.name}</p>
           </div>
           <ChevronRight size={18} strokeWidth={2.5} />

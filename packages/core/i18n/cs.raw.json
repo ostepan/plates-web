@@ -861,5 +861,9 @@
  "rec": "zot.",
  "This routine targets fatigued muscles ({{ready}}/{{total}} ready). Start anyway?": "Tato rutina cílí na unavené svaly ({{ready}}/{{total}} připraveno). Přesto začít?",
  "e1RM": "e1RM",
- "Log working sets in two exercises to compare their trends.": "Zaznamenej pracovní série u dvou cviků a porovnej jejich vývoj."
+ "Log working sets in two exercises to compare their trends.": "Zaznamenej pracovní série u dvou cviků a porovnej jejich vývoj.",
+ "per side": "na stranu",
+ "off": "mimo",
+ "Couldn't load this screen. Reload to try again.": "Obrazovku se nepodařilo načíst. Zkus to znovu.",
+ "Reload": "Načíst znovu"
 }

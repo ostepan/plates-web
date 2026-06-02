@@ -2,13 +2,14 @@ import { useEffect, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { useNavigate, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { Check, Lightbulb, MoreHorizontal, Plus } from "lucide-react";
+import { ArrowDown, ArrowUp, Check, Lightbulb, MoreHorizontal, Plus } from "lucide-react";
 import { db } from "@core/db/db";
 import {
   addSet, discardSession, finishSession, lastCompletedSets, toggleSetComplete, updateSet,
 } from "@core/db/mutations";
 import type { Exercise, ID, WorkoutSet } from "@core/models/types";
 import type { SetKind } from "@core/models/enums";
+import { STANDARD_KG_PLATES, STANDARD_LB_PLATES, plates } from "@core/calc/plate";
 import { supersetBadge } from "@core/superset";
 import { formatDuration, localizedExerciseName, weightUnit } from "@app/lib/format";
 import { useRestTimer } from "@app/hooks/useRestTimer";
@@ -189,7 +190,7 @@ export function ActiveWorkout() {
                 </div>
               </div>
               <div className="px-[22px]">
-                <div className="grid grid-cols-[2rem_1fr_1fr_1.9rem_2.9rem_2.1rem] items-center gap-1.5 pb-1">
+                <div className="grid grid-cols-[2rem_1fr_1fr_1.9rem_3.4rem_2.1rem] items-center gap-1.5 pb-1">
                   <span className="eyebrow text-ink3 text-[9px]">{t("SET")}</span>
                   <span className="eyebrow text-ink3 text-[9px]">{unit.toUpperCase()}</span>
                   <span className="eyebrow text-ink3 text-[9px]">{t("REPS")}</span>
@@ -253,6 +254,52 @@ const KIND_LABEL: Record<SetKind, string> = {
   working: "Working", warmup: "Warm-up", dropset: "Drop set", amrap: "AMRAP", restPause: "Rest-pause", myoReps: "Myo-reps",
 };
 
+/** RIR → text color, matching the Iron RIRStyle scale (0 redlined → 4 fresh). */
+function rirColorClass(rir: number | undefined): string {
+  if (rir == null || Number.isNaN(rir)) return "text-ink";
+  if (rir <= 0) return "text-bad";
+  if (rir === 1) return "text-fade";
+  if (rir === 2) return "text-warn";
+  if (rir === 3) return "text-ok/80";
+  return "text-ok";
+}
+
+/** Per-side plate breakdown for the active set — the Iron vertical plate stack. */
+function PlateStrip({ total }: { total: number }) {
+  const { t } = useTranslation();
+  const unit = weightUnit();
+  const bar = unit === "kg" ? 20 : 45;
+  const available = unit === "kg" ? STANDARD_KG_PLATES : STANDARD_LB_PLATES;
+  if (!total || total <= bar) return null;
+  const { perSide, unloaded } = plates(total, bar, available);
+  if (perSide.length === 0) return null;
+  const counts = new Map<number, number>();
+  for (const p of perSide) counts.set(p, (counts.get(p) ?? 0) + 1);
+  const label = [...counts.entries()].map(([w, n]) => `${n}×${w}`).join(" · ");
+  const maxW = Math.max(...available);
+  return (
+    <div className="-mx-[22px] mb-1.5 bg-accentSoft/50 px-[22px] py-2">
+      <div className="mb-1 flex items-baseline justify-between">
+        <span className="eyebrow text-accentInk text-[9px]">{`${bar} ${unit} ${t("bar")} · ${t("per side")}`}</span>
+        <span className="mono-num text-[10px] text-ink2">
+          {label}{unloaded > 0 ? ` · +${Math.round(unloaded)} ${t("off")}` : ""}
+        </span>
+      </div>
+      <div className="flex items-end gap-[3px]">
+        {perSide.map((w, i) => (
+          <div
+            key={i}
+            className="flex items-center justify-center bg-accent text-white"
+            style={{ width: 6 + (w / maxW) * 10, height: 16 + (w / maxW) * 34 }}
+          >
+            <span className="mono-num text-[8px] font-bold" style={{ writingMode: "vertical-rl" }}>{w}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function SetRow({
   set,
   index,
@@ -281,10 +328,12 @@ function SetRow({
       : dir === "down" ? "border-fade/50 bg-fade/10 text-fade"
         : dir === "equal" ? "border-rule bg-chip text-ink3"
           : "border-rule text-ink3";
+  const rirVal = rir.trim() === "" ? undefined : parseInt(rir, 10);
 
   return (
+    <>
     <div
-      className={`grid grid-cols-[2rem_1fr_1fr_1.9rem_2.9rem_2.1rem] items-center gap-1.5 py-1.5 ${
+      className={`grid grid-cols-[2rem_1fr_1fr_1.9rem_3.4rem_2.1rem] items-center gap-1.5 py-1.5 ${
         active ? "-mx-[22px] bg-accentSoft px-[22px]" : ""
       }`}
     >
@@ -339,7 +388,7 @@ function SetRow({
         placeholder={ghost?.rir != null ? String(ghost.rir) : "–"}
         onChange={(e) => setRir(e.target.value)}
         onBlur={() => void updateSet(set.id, { rir: rir.trim() === "" ? undefined : parseInt(rir, 10) || 0 })}
-        className="mono-num w-full border border-rule bg-card px-1 py-1.5 text-center text-[14px] text-ink outline-none focus:border-ink placeholder:text-ink3/50"
+        className={`mono-num w-full border border-rule bg-card px-1 py-1.5 text-center text-[14px] font-semibold outline-none focus:border-ink placeholder:text-ink3/50 ${rirColorClass(rirVal)}`}
       />
       {ghost ? (
         <button
@@ -350,8 +399,10 @@ function SetRow({
             setReps(String(ghost.reps));
             void updateSet(set.id, { weight: ghost.weight, reps: ghost.reps });
           }}
-          className={`mono-num h-7 border px-0.5 text-[9px] font-semibold leading-none ${ghostCls}`}
+          className={`mono-num inline-flex h-7 items-center justify-center gap-px border px-0.5 text-[9px] font-semibold leading-none ${ghostCls}`}
         >
+          {dir === "up" && <ArrowUp size={8} strokeWidth={3} className="shrink-0" />}
+          {dir === "down" && <ArrowDown size={8} strokeWidth={3} className="shrink-0" />}
           {ghost.weight}×{ghost.reps}
         </button>
       ) : (
@@ -375,5 +426,7 @@ function SetRow({
         <Check size={16} strokeWidth={2.75} />
       </button>
     </div>
+    {active && <PlateStrip total={parseFloat(weight) || 0} />}
+    </>
   );
 }
