@@ -611,5 +611,9 @@
  "Move down": "Move down",
  "Remove": "Remove",
  "Create a routine first, then build a program from it.": "Create a routine first, then build a program from it.",
- "Delete this program? Past sessions are kept.": "Delete this program? Past sessions are kept."
+ "Delete this program? Past sessions are kept.": "Delete this program? Past sessions are kept.",
+ "SUGGESTED SWAPS": "SUGGESTED SWAPS",
+ "FRESHER OPTIONS": "FRESHER OPTIONS",
+ "rec": "rec",
+ "This routine targets fatigued muscles ({{ready}}/{{total}} ready). Start anyway?": "This routine targets fatigued muscles ({{ready}}/{{total}} ready). Start anyway?"
 }
