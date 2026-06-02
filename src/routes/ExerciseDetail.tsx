@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { useNavigate, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { ChevronLeft, Lightbulb, Trash2 } from "lucide-react";
+import { ChevronLeft, Lightbulb, Pencil, Trash2 } from "lucide-react";
 import { db } from "@core/db/db";
 import { deleteExercise, updateExerciseNotes } from "@core/db/mutations";
 import { MUSCLE_I18N_KEY } from "@core/models/enums";
@@ -68,9 +68,14 @@ export function ExerciseDetail() {
         }
         trailing={
           ex.isCustom ? (
-            <IronToolbarButton onClick={() => void onDelete()} label={t("Delete exercise")}>
-              <Trash2 size={16} strokeWidth={2.25} />
-            </IronToolbarButton>
+            <div className="flex items-center gap-1.5">
+              <IronToolbarButton onClick={() => navigate(`/exercises/${id}/edit`)} label={t("Edit")}>
+                <Pencil size={16} strokeWidth={2.25} />
+              </IronToolbarButton>
+              <IronToolbarButton onClick={() => void onDelete()} label={t("Delete exercise")}>
+                <Trash2 size={16} strokeWidth={2.25} />
+              </IronToolbarButton>
+            </div>
           ) : undefined
         }
       />

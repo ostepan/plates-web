@@ -839,5 +839,10 @@
  "Not found": "Nenalezeno",
  "Delete exercise": "Smazat cvik",
  "Delete this custom exercise?": "Smazat tento vlastní cvik?",
- "Setup, form, reminders — just for you": "Nastavení, technika, připomínky — jen pro tebe"
+ "Setup, form, reminders — just for you": "Nastavení, technika, připomínky — jen pro tebe",
+ "Name (Czech)": "Název (česky)",
+ "Exercise name": "Název cviku",
+ "Optional": "Volitelné",
+ "How to perform it (optional)": "Jak cvik provádět (volitelné)",
+ "Instructions (Czech)": "Postup (česky)"
 }

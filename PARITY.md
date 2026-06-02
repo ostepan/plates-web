@@ -32,6 +32,7 @@ Legend: ✅ done · 🟡 partial · ⬜ todo · ➖ N/A on web (platform).
 | **Exercise detail** (`/exercises/:id`) + list nav | `ExerciseDetail.tsx`, `ExercisesTab.tsx` |
 | **Form cues** (`userNotes`) — detail textarea autosave + active-workout lightbulb + list badge | `ExerciseDetail.tsx`, `ActiveWorkout.tsx`, `mutations.ts` |
 | Delete custom exercise (cascades routine refs) | `deleteExercise` in `mutations.ts` |
+| **Custom exercise editor** (`/exercises/new`, `/exercises/:id/edit`) — name EN/CS, primary/secondary, equipment, mechanic, rest, instructions | `CustomExerciseEditor.tsx`, `createCustomExercise`/`updateCustomExercise` |
 
 ## 🟡 Partial
 | Feature | iOS | Web gap |
@@ -45,13 +46,12 @@ Legend: ✅ done · 🟡 partial · ⬜ todo · ➖ N/A on web (platform).
 ## ⬜ Todo (real screens missing)
 | Feature | iOS source |
 |---|---|
-| **Custom exercise editor** | `CustomExerciseEditor` (create/edit/delete) |
 | **Custom program editor** | `CustomProgramEditor` (weeks, deload, rule, day list) |
 | **Compare exercises** analytics | `CompareExercisesView` |
 | **Recovery swap suggestions** on routine | `WorkoutRecommender.getSwapSuggestions` |
 | Confetti on summary | `ConfettiView` (canvas-confetti) |
 
-> ~~Exercise detail + form cues + list nav~~ — **shipped** (see Done).
+> ~~Exercise detail + form cues + list nav~~, ~~Custom exercise editor~~ — **shipped** (see Done).
 
 ## ➖ N/A on web (platform — needs replacement, not port)
 | iOS | Web stance |
@@ -66,7 +66,7 @@ Legend: ✅ done · 🟡 partial · ⬜ todo · ➖ N/A on web (platform).
 
 ## Suggested next build order
 1. ~~Exercise detail + form cues~~ — ✅ done.
-2. **Custom exercise editor** (`/exercises/new`, edit/delete) — reuses the detail screen's fields.
+2. ~~Custom exercise editor~~ — ✅ done.
 3. **Custom program editor** (`/programs/new`).
 4. **Recovery swaps + pre-start fatigue guard** on RoutineDetail (calc likely already there).
 5. **Compare exercises** analytics segment.

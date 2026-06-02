@@ -2,13 +2,13 @@ import { useMemo, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { ChevronRight, Lightbulb, Search } from "lucide-react";
+import { ChevronRight, Lightbulb, Plus, Search } from "lucide-react";
 import { db } from "@core/db/db";
 import {
   ALL_EQUIPMENT, ALL_MUSCLE_GROUPS, MUSCLE_I18N_KEY, type Equipment, type MuscleGroup,
 } from "@core/models/enums";
 import type { Exercise } from "@core/models/types";
-import { IronTopBar } from "@ui/components/IronTopBar";
+import { IronTopBar, IronToolbarButton } from "@ui/components/IronTopBar";
 import { localizedExerciseName } from "@app/lib/format";
 
 export function ExercisesTab() {
@@ -41,7 +41,14 @@ export function ExercisesTab() {
 
   return (
     <div className="flex h-full flex-col">
-      <IronTopBar title={t("Exercises")} />
+      <IronTopBar
+        title={t("Exercises")}
+        trailing={
+          <IronToolbarButton tint="bg-accent" onClick={() => navigate("/exercises/new")} label={t("New exercise")}>
+            <Plus size={18} strokeWidth={2.5} />
+          </IronToolbarButton>
+        }
+      />
 
       <div className="space-y-2 px-[22px] py-3">
         <div className="flex items-center gap-2 border border-rule bg-card px-3 py-2.5">

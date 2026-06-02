@@ -2,7 +2,10 @@ import "fake-indexeddb/auto";
 import { beforeAll, describe, expect, it } from "vitest";
 import { db } from "./db";
 import { seedIfNeeded } from "./seed";
-import { addExerciseToRoutine, createRoutine, deleteExercise, updateExerciseNotes } from "./mutations";
+import {
+  addExerciseToRoutine, createCustomExercise, createRoutine, deleteExercise,
+  updateCustomExercise, updateExerciseNotes,
+} from "./mutations";
 import type { Exercise } from "../models/types";
 
 function customExercise(name: string): Exercise {
@@ -50,5 +53,41 @@ describe("exercise mutations", () => {
 
     expect(await db.exercises.get(custom.id)).toBeUndefined();
     expect(await db.routineExercises.get(reId)).toBeUndefined();
+  });
+
+  it("createCustomExercise marks isCustom, namespaces nameKey, falls back CS→EN", async () => {
+    const id = await createCustomExercise({
+      nameEN: "Zercher Squat",
+      muscleGroup: "legs",
+      secondary: ["glutes", "legs"], // primary should be filtered out of secondary
+      equipment: "barbell",
+      mechanic: "compound",
+    });
+    const ex = await db.exercises.get(id);
+    expect(ex).toMatchObject({ isCustom: true, nameEN: "Zercher Squat", nameCS: "Zercher Squat" });
+    expect(ex!.nameKey).toBe(`custom:${id}`);
+    expect(ex!.secondary).toEqual(["glutes"]);
+    expect(ex!.defaultRestSeconds).toBe(120);
+  });
+
+  it("updateCustomExercise edits a custom exercise and ignores stock", async () => {
+    const id = await createCustomExercise({
+      nameEN: "Temp", muscleGroup: "chest", equipment: "dumbbell", mechanic: "isolation",
+    });
+    await updateCustomExercise(id, {
+      nameEN: "Renamed Press", nameCS: "Tlak", muscleGroup: "shoulders",
+      equipment: "machine", mechanic: "compound", defaultRestSeconds: 90,
+    });
+    expect(await db.exercises.get(id)).toMatchObject({
+      nameEN: "Renamed Press", nameCS: "Tlak", muscleGroup: "shoulders",
+      equipment: "machine", mechanic: "compound", defaultRestSeconds: 90,
+    });
+
+    const stock = (await db.exercises.toArray()).find((e) => !e.isCustom)!;
+    const before = stock.nameEN;
+    await updateCustomExercise(stock.id, {
+      nameEN: "Hacked", muscleGroup: "abs", equipment: "band", mechanic: "isolation",
+    });
+    expect((await db.exercises.get(stock.id))?.nameEN).toBe(before);
   });
 });

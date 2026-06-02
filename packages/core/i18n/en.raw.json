@@ -595,5 +595,10 @@
  "Not found": "Not found",
  "Delete exercise": "Delete exercise",
  "Delete this custom exercise?": "Delete this custom exercise?",
- "Setup, form, reminders — just for you": "Setup, form, reminders — just for you"
+ "Setup, form, reminders — just for you": "Setup, form, reminders — just for you",
+ "Name (Czech)": "Name (Czech)",
+ "Exercise name": "Exercise name",
+ "Optional": "Optional",
+ "How to perform it (optional)": "How to perform it (optional)",
+ "Instructions (Czech)": "Instructions (Czech)"
 }

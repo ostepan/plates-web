@@ -3,9 +3,9 @@
 // ActiveWorkoutFactory / ActiveWorkoutModel.
 import { db } from "./db";
 import type {
-  BodyWeightEntry, ID, MuscleVolumeTarget, Routine, RoutineExercise, Session, SessionExercise, WorkoutSet,
+  BodyWeightEntry, Exercise, ID, MuscleVolumeTarget, Routine, RoutineExercise, Session, SessionExercise, WorkoutSet,
 } from "../models/types";
-import type { SetKind, WeightUnit } from "../models/enums";
+import type { Equipment, Mechanic, MuscleGroup, SetKind, WeightUnit } from "../models/enums";
 
 const newId = (): ID => crypto.randomUUID();
 const now = (): number => Date.now();
@@ -99,6 +99,61 @@ export async function deleteRoutine(routineId: ID): Promise<void> {
 }
 
 // ---- Exercises ------------------------------------------------------------
+
+export interface ExerciseInput {
+  nameEN: string;
+  nameCS?: string;
+  muscleGroup: MuscleGroup;
+  secondary?: MuscleGroup[];
+  equipment: Equipment;
+  mechanic: Mechanic;
+  defaultRestSeconds?: number;
+  instructionsEN?: string;
+  instructionsCS?: string;
+}
+
+function normalizeExerciseInput(input: ExerciseInput) {
+  const en = input.nameEN.trim();
+  return {
+    nameEN: en,
+    nameCS: input.nameCS?.trim() || en, // fall back to EN when CS is blank
+    muscleGroup: input.muscleGroup,
+    secondary: (input.secondary ?? []).filter((m) => m !== input.muscleGroup),
+    equipment: input.equipment,
+    mechanic: input.mechanic,
+    instructionsEN: input.instructionsEN?.trim() || undefined,
+    instructionsCS: input.instructionsCS?.trim() || undefined,
+  };
+}
+
+/** Create a user-authored custom exercise. nameKey is namespaced to never
+ *  collide with stock seed keys. */
+export async function createCustomExercise(input: ExerciseInput): Promise<ID> {
+  const t = now();
+  const id = newId();
+  const ex: Exercise = {
+    id,
+    nameKey: `custom:${id}`,
+    ...normalizeExerciseInput(input),
+    isCustom: true,
+    defaultRestSeconds: input.defaultRestSeconds ?? 120,
+    createdAt: t,
+    updatedAt: t,
+  };
+  await db.exercises.add(ex);
+  return id;
+}
+
+/** Edit a custom exercise's definition. Stock exercises are read-only. */
+export async function updateCustomExercise(id: ID, input: ExerciseInput): Promise<void> {
+  const ex = await db.exercises.get(id);
+  if (!ex || !ex.isCustom) return;
+  await db.exercises.update(id, {
+    ...normalizeExerciseInput(input),
+    defaultRestSeconds: input.defaultRestSeconds ?? ex.defaultRestSeconds,
+    updatedAt: now(),
+  });
+}
 
 /** Save per-exercise form cues (user-authored). Works for stock + custom. */
 export async function updateExerciseNotes(id: ID, userNotes: string): Promise<void> {
