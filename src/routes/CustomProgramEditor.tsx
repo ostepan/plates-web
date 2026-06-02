@@ -1,11 +1,11 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { ArrowDown, ArrowUp, Check, ChevronLeft, Plus, X } from "lucide-react";
 import { db } from "@core/db/db";
-import { createCustomProgram, type CustomProgramInput } from "@core/db/mutations";
-import { programOwnedRoutineIds } from "@core/db/queries";
+import { createCustomProgram, updateCustomProgram, type CustomProgramInput } from "@core/db/mutations";
+import { loadProgram, programOwnedRoutineIds } from "@core/db/queries";
 import type { ProgressionRule } from "@core/models/enums";
 import { IronTopBar, IronToolbarButton } from "@ui/components/IronTopBar";
 import { Stepper } from "@ui/components/Stepper";
@@ -24,15 +24,27 @@ interface DayDraft {
 }
 
 export function CustomProgramEditor() {
+  const { id } = useParams();
+  const isEdit = !!id;
   const navigate = useNavigate();
   const { t } = useTranslation();
 
+  const existing = useLiveQuery(async () => (id ? await loadProgram(id) : null), [id], undefined);
+
   const routines = useLiveQuery(async () => {
     const owned = await programOwnedRoutineIds();
+    // In edit mode, keep this program's own day-routines selectable.
+    const mine = new Set<string>();
+    if (id) {
+      const struct = await loadProgram(id);
+      struct?.mesos.forEach((mv) =>
+        mv.micros.forEach((wv) => wv.days.forEach((dv) => dv.day.routineId && mine.add(dv.day.routineId))),
+      );
+    }
     return (await db.routines.toArray())
-      .filter((r) => !owned.has(r.id))
+      .filter((r) => !owned.has(r.id) || mine.has(r.id))
       .sort((a, b) => (b.lastUsed ?? b.createdAt) - (a.lastUsed ?? a.createdAt));
-  }, [], undefined);
+  }, [id], undefined);
 
   const [name, setName] = useState("");
   const [notes, setNotes] = useState("");
@@ -43,7 +55,32 @@ export function CustomProgramEditor() {
   const [targetRIR, setTargetRIR] = useState(2);
   const [days, setDays] = useState<DayDraft[]>([]);
 
+  // Populate the form once from the existing program (edit mode).
+  const loadedFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (!isEdit || !existing || loadedFor.current === existing.program.id) return;
+    const meso = existing.mesos[0]?.meso;
+    const micros = existing.mesos[0]?.micros ?? [];
+    setName(existing.program.name);
+    setNotes(existing.program.notes);
+    setWeeks(existing.program.weeks);
+    setDeloadWeek(micros.find((w) => w.micro.isDeload)?.micro.weekIndex ?? -1);
+    if (meso) {
+      setRule(meso.progressionRule);
+      if (meso.linearStepKg != null) setLinearStep(meso.linearStepKg);
+      if (meso.targetRIR != null) setTargetRIR(meso.targetRIR);
+    }
+    setDays((micros[0]?.days ?? []).map((dv) => ({ name: dv.day.name, routineId: dv.day.routineId ?? "" })));
+    loadedFor.current = existing.program.id;
+  }, [isEdit, existing]);
+
+  // Built-in programs aren't editable — bounce to the detail view.
+  useEffect(() => {
+    if (isEdit && existing && existing.program.isBuiltIn) navigate(`/programs/${id}`, { replace: true });
+  }, [isEdit, existing, id, navigate]);
+
   if (routines === undefined) return null;
+  if (isEdit && existing === undefined) return null; // loading
   const noRoutines = routines.length === 0;
 
   function setWeekCount(w: number) {
@@ -83,15 +120,20 @@ export function CustomProgramEditor() {
       targetRIR: rule === "rirBased" ? targetRIR : undefined,
       days: days.map((d) => ({ name: d.name, routineId: d.routineId })),
     };
-    const id = await createCustomProgram(input);
-    navigate(`/programs/${id}`, { replace: true });
+    if (isEdit && id) {
+      await updateCustomProgram(id, input);
+      navigate(`/programs/${id}`, { replace: true });
+    } else {
+      const newId = await createCustomProgram(input);
+      navigate(`/programs/${newId}`, { replace: true });
+    }
   }
 
   return (
     <div className="flex h-[100dvh] flex-col bg-bg">
       <IronTopBar
         leading={
-          <IronToolbarButton onClick={() => navigate("/programs")} label={t("Back")}>
+          <IronToolbarButton onClick={() => navigate(isEdit ? `/programs/${id}` : "/programs")} label={t("Back")}>
             <ChevronLeft size={18} strokeWidth={2.5} />
           </IronToolbarButton>
         }
@@ -105,7 +147,7 @@ export function CustomProgramEditor() {
       <div className="min-h-0 flex-1 overflow-y-auto pb-10">
         <div className="px-[22px] pb-4 pt-2">
           <p className="eyebrow text-accent mb-1">{t("Custom")}</p>
-          <h1 className="display-title text-[34px] text-ink">{t("New program")}.</h1>
+          <h1 className="display-title text-[34px] text-ink">{isEdit ? t("Edit program") : t("New program")}.</h1>
         </div>
 
         <div className="space-y-5 px-[22px]">

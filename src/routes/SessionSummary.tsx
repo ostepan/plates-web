@@ -5,6 +5,7 @@ import { X, AlertTriangle } from "lucide-react";
 import { db } from "@core/db/db";
 import { sessionHighlights } from "@core/db/analytics";
 import type { Exercise, ID } from "@core/models/types";
+import { Confetti } from "@ui/components/Confetti";
 import { formatDuration, localizedExerciseName, weightUnit } from "@app/lib/format";
 
 export function SessionSummary() {
@@ -44,6 +45,7 @@ export function SessionSummary() {
 
   return (
     <div className="flex h-[100dvh] flex-col bg-bg">
+      <Confetti count={prCount > 0 ? 170 : 110} />
       {/* dark header band */}
       <div className="bg-ink px-[22px] pb-6 pt-[max(1rem,env(safe-area-inset-top))] text-white">
         <div className="flex items-start justify-between">

@@ -615,5 +615,8 @@
  "SUGGESTED SWAPS": "SUGGESTED SWAPS",
  "FRESHER OPTIONS": "FRESHER OPTIONS",
  "rec": "rec",
- "This routine targets fatigued muscles ({{ready}}/{{total}} ready). Start anyway?": "This routine targets fatigued muscles ({{ready}}/{{total}} ready). Start anyway?"
+ "This routine targets fatigued muscles ({{ready}}/{{total}} ready). Start anyway?": "This routine targets fatigued muscles ({{ready}}/{{total}} ready). Start anyway?",
+ "COMPARE": "COMPARE",
+ "e1RM": "e1RM",
+ "Log working sets in two exercises to compare their trends.": "Log working sets in two exercises to compare their trends."
 }

@@ -5,9 +5,10 @@ import { IronSegmented } from "@ui/components/IronSegmented";
 import { OverviewSegment } from "./analytics/OverviewSegment";
 import { VolumeSegment } from "./analytics/VolumeSegment";
 import { ExerciseSegment } from "./analytics/ExerciseSegment";
+import { CompareSegment } from "./analytics/CompareSegment";
 import { PRsSegment } from "./analytics/PRsSegment";
 
-type Segment = "overview" | "volume" | "exercise" | "prs";
+type Segment = "overview" | "volume" | "exercise" | "compare" | "prs";
 
 export function AnalyticsTab() {
   const { t } = useTranslation();
@@ -23,6 +24,7 @@ export function AnalyticsTab() {
           { value: "overview", label: t("OVERVIEW") },
           { value: "volume", label: t("VOLUME") },
           { value: "exercise", label: t("CHART") },
+          { value: "compare", label: t("COMPARE") },
           { value: "prs", label: t("PRS") },
         ]}
       />
@@ -30,6 +32,7 @@ export function AnalyticsTab() {
         {segment === "overview" && <OverviewSegment />}
         {segment === "volume" && <VolumeSegment />}
         {segment === "exercise" && <ExerciseSegment />}
+        {segment === "compare" && <CompareSegment />}
         {segment === "prs" && <PRsSegment />}
       </div>
     </div>
