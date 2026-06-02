@@ -7,6 +7,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 export function useRestTimer() {
   const [endsAt, setEndsAt] = useState<number | null>(null);
   const [remaining, setRemaining] = useState(0);
+  // Duration the current rest period started with — denominator for the ring.
+  const [total, setTotal] = useState(0);
   const firedRef = useRef(false);
 
   useEffect(() => {
@@ -31,17 +33,18 @@ export function useRestTimer() {
     if ("Notification" in window && Notification.permission === "default") {
       void Notification.requestPermission();
     }
+    setTotal(seconds);
     setEndsAt(Date.now() + seconds * 1000);
   }, []);
 
   const stop = useCallback(() => setEndsAt(null), []);
-  const adjust = useCallback(
-    (delta: number) =>
-      setEndsAt((e) => (e == null ? null : Math.max(Date.now(), e + delta * 1000))),
-    [],
-  );
+  const adjust = useCallback((delta: number) => {
+    setEndsAt((e) => (e == null ? null : Math.max(Date.now(), e + delta * 1000)));
+    // Grow/shrink the denominator with the timer so the ring fraction stays sane.
+    setTotal((tt) => Math.max(1, tt + delta));
+  }, []);
 
-  return { running: endsAt != null, remaining, start, stop, adjust };
+  return { running: endsAt != null, remaining, total, start, stop, adjust };
 }
 
 function notifyDone() {

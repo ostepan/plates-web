@@ -244,6 +244,59 @@ export async function startSessionFromRoutine(
   return sessionId;
 }
 
+/** Start a blank ad-hoc ("quick start") workout — no routine, no exercises yet. */
+export async function startQuickWorkout(name = "Quick workout"): Promise<ID> {
+  const t = now();
+  const sessionId = newId();
+  const session: Session = {
+    id: sessionId,
+    date: t,
+    routineNameSnapshot: name,
+    durationSeconds: 0,
+    notes: "",
+    warmupNotes: "",
+    totalVolume: 0,
+    wasDeloadAtStart: false,
+    createdAt: t,
+    updatedAt: t,
+  };
+  await db.sessions.add(session);
+  return sessionId;
+}
+
+/**
+ * Append an exercise to an in-progress session (mid-workout add). Seeds one
+ * empty working set so the row is immediately loggable. Returns the new
+ * sessionExercise id.
+ */
+export async function addExerciseToSession(sessionId: ID, exerciseId: ID): Promise<ID> {
+  const t = now();
+  const count = await db.sessionExercises.where("sessionId").equals(sessionId).count();
+  const sxId = newId();
+  await db.transaction("rw", db.sessionExercises, db.workoutSets, async () => {
+    await db.sessionExercises.add({
+      id: sxId,
+      sessionId,
+      exerciseId,
+      order: count,
+      notesPerExercise: "",
+      prFlagsRaw: 0,
+      createdAt: t,
+    });
+    await db.workoutSets.add({
+      id: newId(),
+      sessionExerciseId: sxId,
+      order: 0,
+      kind: "working",
+      weight: 0,
+      reps: 0,
+      isCompleted: false,
+      createdAt: t,
+    });
+  });
+  return sxId;
+}
+
 export async function addSet(sessionExerciseId: ID, kind: SetKind = "working"): Promise<ID> {
   const existing = await db.workoutSets.where("sessionExerciseId").equals(sessionExerciseId).toArray();
   const last = existing.sort((a, b) => a.order - b.order).at(-1);
