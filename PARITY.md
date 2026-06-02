@@ -36,6 +36,8 @@ Legend: ✅ done · 🟡 partial · ⬜ todo · ➖ N/A on web (platform).
 | **Custom program editor** (`/programs/new`) — name, notes, weeks, deload week, progression rule, day list w/ routine picker; delete custom program | `CustomProgramEditor.tsx`, `createCustomProgram`/`deleteProgram` |
 | **Recovery swaps + fatigue guard** on RoutineDetail — fresher-alternative swaps (recovery→equipment→mechanic, 15pp gate, 1/muscle), tap re-points in place; Start tints by verdict + confirm when not recommended | `getSwapSuggestions`, `RoutineDetail.tsx` |
 | **Compare exercises** analytics — two-exercise e1RM overlay chart (color-coded pickers, stat tiles) | `CompareSegment.tsx` |
+| **Confetti** on workout summary — dependency-free canvas burst, reduced-motion aware, bigger on PRs | `Confetti.tsx`, `SessionSummary.tsx` |
+| Workout **stopwatch** — running elapsed timer in active workout header | `ActiveWorkout.tsx` (already present) |
 
 ## 🟡 Partial
 | Feature | iOS | Web gap |
@@ -49,12 +51,10 @@ Legend: ✅ done · 🟡 partial · ⬜ todo · ➖ N/A on web (platform).
 ## ⬜ Todo (real screens missing)
 | Feature | iOS source |
 |---|---|
-| Confetti on summary | `ConfettiView` (canvas-confetti) |
-| Set **stopwatch** in active workout | `ActiveWorkoutModel` stopwatch service |
 | Routine **share/import** link | iOS `plates://routine` (web: share link + import sheet) |
 | Edit existing custom program | iOS CustomProgramEditor edit mode (web has create + delete) |
 
-> ~~Exercise detail + form cues + list nav~~, ~~Custom exercise editor~~, ~~Custom program editor (create)~~, ~~Recovery swaps + fatigue guard~~, ~~Compare exercises~~ — **shipped** (see Done).
+> ~~Exercise detail + form cues + list nav~~, ~~Custom exercise editor~~, ~~Custom program editor (create)~~, ~~Recovery swaps + fatigue guard~~, ~~Compare exercises~~, ~~Confetti~~ (+ stopwatch already present) — **shipped** (see Done).
 
 ## ➖ N/A on web (platform — needs replacement, not port)
 | iOS | Web stance |
@@ -73,5 +73,5 @@ Legend: ✅ done · 🟡 partial · ⬜ todo · ➖ N/A on web (platform).
 3. ~~Custom program editor (create + delete)~~ — ✅ done.
 4. ~~Recovery swaps + pre-start fatigue guard~~ — ✅ done.
 5. ~~Compare exercises analytics segment~~ — ✅ done.
-6. **Confetti** + set **stopwatch** polish.
+6. ~~Confetti~~ — ✅ done. (Set stopwatch already covered by the active-workout elapsed timer.)
 7. Routine **share/import** link flow.
