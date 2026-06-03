@@ -1,9 +1,19 @@
 import { useLiveQuery } from "dexie-react-hooks";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { ChevronLeft, Plus } from "lucide-react";
+import { ChevronLeft, Copy, Pause, Pencil, Play, Plus, Trash2 } from "lucide-react";
 import { db } from "@core/db/db";
+import {
+  activateProgram, deactivateProgram, deleteProgram, duplicateProgram,
+} from "@core/db/mutations";
+import type { Program } from "@core/models/types";
 import { IronTopBar, IronToolbarButton } from "@ui/components/IronTopBar";
+import { IronMenu, type IronMenuItem } from "@ui/components/IronMenu";
+
+interface ProgramRow {
+  p: Program;
+  daysPerWeek: number;
+}
 
 export function ProgramsList() {
   const navigate = useNavigate();
@@ -24,13 +34,53 @@ export function ProgramsList() {
             )[0];
             if (micro) daysPerWeek = await db.programDays.where("microcycleId").equals(micro.id).count();
           }
-          return { p, daysPerWeek };
+          return { p, daysPerWeek } as ProgramRow;
         }),
       );
     },
     [],
     undefined,
   );
+
+  async function duplicate(id: string) {
+    const newId = await duplicateProgram(id);
+    if (newId) navigate(`/programs/${newId}`);
+  }
+  async function remove(p: Program) {
+    if (!window.confirm(`${t("Delete program")} "${p.name}"? ${t("Past sessions are kept.")}`)) return;
+    await deleteProgram(p.id);
+  }
+
+  function menuItems(p: Program): IronMenuItem[] {
+    const items: IronMenuItem[] = [
+      {
+        label: p.isActive ? t("Deactivate") : t("Activate"),
+        icon: p.isActive ? <Pause size={15} strokeWidth={2.25} /> : <Play size={15} strokeWidth={2.25} />,
+        onClick: () => void (p.isActive ? deactivateProgram(p.id) : activateProgram(p.id)),
+      },
+      {
+        label: t("Duplicate"),
+        icon: <Copy size={15} strokeWidth={2.25} />,
+        onClick: () => void duplicate(p.id),
+      },
+    ];
+    if (!p.isBuiltIn) {
+      items.push(
+        {
+          label: t("Edit"),
+          icon: <Pencil size={15} strokeWidth={2.25} />,
+          onClick: () => navigate(`/programs/${p.id}/edit`),
+        },
+        {
+          label: t("Delete"),
+          icon: <Trash2 size={15} strokeWidth={2.25} />,
+          danger: true,
+          onClick: () => void remove(p),
+        },
+      );
+    }
+    return items;
+  }
 
   const builtIn = (programs ?? []).filter((x) => x.p.isBuiltIn);
   const custom = (programs ?? []).filter((x) => !x.p.isBuiltIn);
@@ -51,9 +101,9 @@ export function ProgramsList() {
         }
       />
       <div className="min-h-0 flex-1 overflow-y-auto pb-10">
-        <Section title={t("BUILT-IN")} items={builtIn} t={t} onOpen={(id) => navigate(`/programs/${id}`)} />
+        <Section title={t("BUILT-IN")} items={builtIn} t={t} onOpen={(id) => navigate(`/programs/${id}`)} menuItems={menuItems} />
         {custom.length > 0 && (
-          <Section title={t("CUSTOM")} items={custom} t={t} onOpen={(id) => navigate(`/programs/${id}`)} />
+          <Section title={t("CUSTOM")} items={custom} t={t} onOpen={(id) => navigate(`/programs/${id}`)} menuItems={menuItems} />
         )}
       </div>
     </div>
@@ -65,11 +115,13 @@ function Section({
   items,
   t,
   onOpen,
+  menuItems,
 }: {
   title: string;
-  items: { p: { id: string; name: string; author: string; weeks: number; isActive: boolean }; daysPerWeek: number }[];
+  items: ProgramRow[];
   t: (k: string) => string;
   onOpen: (id: string) => void;
+  menuItems: (p: Program) => IronMenuItem[];
 }) {
   if (items.length === 0) return null;
   return (
@@ -77,21 +129,24 @@ function Section({
       <p className="eyebrow text-ink3 px-[22px] pb-2 pt-4">{title}</p>
       <ul className="divide-y divide-hairline border-y border-hairline">
         {items.map(({ p, daysPerWeek }, i) => (
-          <li key={p.id}>
+          <li key={p.id} className="flex items-center active:bg-chip">
             <button
               type="button"
               onClick={() => onOpen(p.id)}
-              className="flex w-full items-center gap-4 px-[22px] py-4 text-left active:bg-chip"
+              className="flex flex-1 items-center gap-4 py-4 pl-[22px] text-left"
             >
               <span className="mono-num text-ink3">{String(i + 1).padStart(2, "0")}</span>
-              <div className="flex-1">
-                <p className="font-display text-[17px] font-bold text-ink">{p.name}</p>
+              <div className="min-w-0 flex-1">
+                <p className="truncate font-display text-[17px] font-bold text-ink">{p.name}</p>
                 <p className="eyebrow text-ink3 mt-0.5">
                   {p.weeks} {t("WK")} · {daysPerWeek} {t("DAYS")} · {p.author}
                 </p>
               </div>
               {p.isActive && <span className="eyebrow text-accent">{t("ACTIVE")}</span>}
             </button>
+            <div className="pr-[14px]">
+              <IronMenu label={t("Program options")} items={menuItems(p)} />
+            </div>
           </li>
         ))}
       </ul>
