@@ -442,6 +442,59 @@ export async function deleteProgram(programId: ID): Promise<void> {
   });
 }
 
+/**
+ * Deep-copy a program (built-in or custom) into a new editable custom program.
+ * Day templates keep their routineId references (routines are shared), so the
+ * copy is immediately runnable and can then be edited freely.
+ */
+export async function duplicateProgram(programId: ID): Promise<ID | null> {
+  const src = await db.programs.get(programId);
+  if (!src) return null;
+  const t = now();
+  const newProgramId = newId();
+  const program: Program = {
+    id: newProgramId,
+    name: `${src.name} (copy)`,
+    author: "You",
+    weeks: src.weeks,
+    notes: src.notes,
+    isBuiltIn: false,
+    isActive: false,
+    createdAt: t,
+    updatedAt: t,
+  };
+
+  const mesos = (await db.mesocycles.where("programId").equals(programId).toArray()).sort(
+    (a, b) => a.order - b.order,
+  );
+  const newMesos: Mesocycle[] = [];
+  const newMicros: Microcycle[] = [];
+  const newDays: ProgramDay[] = [];
+  for (const meso of mesos) {
+    const mesoId = newId();
+    newMesos.push({ ...meso, id: mesoId, programId: newProgramId });
+    const micros = (await db.microcycles.where("mesocycleId").equals(meso.id).toArray()).sort(
+      (a, b) => a.weekIndex - b.weekIndex,
+    );
+    for (const micro of micros) {
+      const microId = newId();
+      newMicros.push({ ...micro, id: microId, mesocycleId: mesoId });
+      const days = await db.programDays.where("microcycleId").equals(micro.id).toArray();
+      for (const day of days) {
+        newDays.push({ ...day, id: newId(), microcycleId: microId });
+      }
+    }
+  }
+
+  await db.transaction("rw", [db.programs, db.mesocycles, db.microcycles, db.programDays], async () => {
+    await db.programs.add(program);
+    await db.mesocycles.bulkAdd(newMesos);
+    await db.microcycles.bulkAdd(newMicros);
+    await db.programDays.bulkAdd(newDays);
+  });
+  return newProgramId;
+}
+
 /** Activate a program; only one program is active at a time. */
 export async function activateProgram(programId: ID): Promise<void> {
   await db.transaction("rw", db.programs, async () => {

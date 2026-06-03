@@ -5,7 +5,7 @@ import { useTranslation } from "react-i18next";
 import { Check, Link, Plus, Trash2, Unlink } from "lucide-react";
 import { db } from "@core/db/db";
 import {
-  addExerciseToRoutine, groupWithPrevious, removeRoutineExercise, renameRoutine,
+  addExerciseToRoutine, deleteRoutine, groupWithPrevious, removeRoutineExercise, renameRoutine,
   ungroupRoutineExercise, updateRoutineExercise,
 } from "@core/db/mutations";
 import { isInSuperset, supersetBadge } from "@core/superset";
@@ -124,6 +124,19 @@ export function RoutineEditor() {
         >
           <Plus size={16} strokeWidth={2.5} />
           <span className="eyebrow text-[12px]">{t("ADD EXERCISE")}</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={async () => {
+            if (!window.confirm(`${t("Delete routine")} "${routine?.name ?? ""}"? ${t("Past sessions are kept.")}`)) return;
+            await deleteRoutine(id);
+            navigate("/workout", { replace: true });
+          }}
+          className="mx-[22px] mt-3 flex items-center gap-2 px-4 py-3 text-bad active:bg-chip"
+        >
+          <Trash2 size={16} strokeWidth={2.25} />
+          <span className="eyebrow text-[12px]">{t("DELETE ROUTINE")}</span>
         </button>
       </div>
 

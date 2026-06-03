@@ -1,15 +1,15 @@
 import { useLiveQuery } from "dexie-react-hooks";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { CalendarDays, ChevronRight, HeartPulse, Plus } from "lucide-react";
+import { CalendarDays, Pencil, Play, Plus, Trash2 } from "lucide-react";
 import { db } from "@core/db/db";
-import { createRoutine } from "@core/db/mutations";
-import { activeProgram, programOwnedRoutineIds } from "@core/db/queries";
+import { createRoutine, deleteRoutine, startProgramDay } from "@core/db/mutations";
+import { activeProgramToday, programOwnedRoutineIds } from "@core/db/queries";
 import { overviewStats } from "@core/db/analytics";
-import { muscleRecovery } from "@core/db/recovery";
 import { MUSCLE_I18N_KEY } from "@core/models/enums";
 import { IronTopBar, IronToolbarButton } from "@ui/components/IronTopBar";
 import { IronEmptyState } from "@ui/components/IronEmptyState";
+import { IronMenu } from "@ui/components/IronMenu";
 import { relativeDay } from "@app/lib/format";
 
 export function WorkoutTab() {
@@ -19,13 +19,20 @@ export function WorkoutTab() {
   const data = useLiveQuery(
     async () => {
       const owned = await programOwnedRoutineIds();
-      const routines = (await db.routines.toArray())
+      const all = (await db.routines.toArray())
         .filter((r) => !owned.has(r.id))
         .sort((a, b) => (b.lastUsed ?? b.createdAt) - (a.lastUsed ?? a.createdAt));
-      const program = await activeProgram();
-      const recovery = await muscleRecovery();
+      const exByMuscle = new Map((await db.exercises.toArray()).map((e) => [e.id, e.muscleGroup]));
+      const routines = await Promise.all(
+        all.map(async (r) => {
+          const res = await db.routineExercises.where("routineId").equals(r.id).toArray();
+          const muscles = [...new Set(res.map((re) => exByMuscle.get(re.exerciseId)).filter((m): m is NonNullable<typeof m> => !!m))];
+          return { routine: r, exCount: res.length, muscles };
+        }),
+      );
+      const today = await activeProgramToday();
       const stats = await overviewStats();
-      return { routines, program, lowest: recovery[0], streak: stats.streakDays };
+      return { routines, today, streak: stats.streakDays };
     },
     [],
     undefined,
@@ -38,7 +45,20 @@ export function WorkoutTab() {
     navigate(`/workout/routine/${id}/edit`);
   }
 
+  async function startToday() {
+    if (!data?.today) return;
+    const sessionId = await startProgramDay(data.today.day.id);
+    if (sessionId) navigate(`/active/${sessionId}`);
+  }
+
+  async function removeRoutine(id: string, name: string) {
+    if (!window.confirm(`${t("Delete routine")} "${name}"? ${t("Past sessions are kept.")}`)) return;
+    await deleteRoutine(id);
+  }
+
   const routines = data?.routines;
+  const today = data?.today;
+  const estMin = today ? Math.max(15, Math.round(today.totalSets * 3.5)) : 0;
 
   return (
     <div className="flex h-full flex-col">
@@ -56,81 +76,119 @@ export function WorkoutTab() {
         }
       />
 
-      <p className="eyebrow text-ink3 px-[22px] pt-3">
-        {todayLabel}
-        {data?.streak ? ` · ${data.streak}-${t("day streak")}` : ""}
-      </p>
+      <div className="min-h-0 flex-1 overflow-y-auto pb-6">
+        <p className="eyebrow text-ink3 px-[22px] pt-3">
+          {todayLabel}
+          {data?.streak ? ` · ${data.streak}-${t("day streak")}` : ""}
+        </p>
 
-      <button
-        type="button"
-        onClick={() => navigate("/recovery")}
-        className="mx-[22px] mt-4 flex items-center justify-between border border-rule bg-card px-4 py-3 text-left active:bg-chip"
-      >
-        <span className="flex items-center gap-3">
-          <HeartPulse size={18} className="text-accent" strokeWidth={2.25} />
-          <span className="font-display font-bold text-ink">{t("Recovery")}</span>
-        </span>
-        <span className="flex items-center gap-2">
-          {data?.lowest && (
-            <span className="mono-num text-[12px] text-ink3">
-              {t(MUSCLE_I18N_KEY[data.lowest.muscleGroup])} {Math.round(data.lowest.recoveryPercentage)}%
-            </span>
-          )}
-          <ChevronRight size={18} className="text-ink3" strokeWidth={2.5} />
-        </span>
-      </button>
+        {/* Today's program workout */}
+        {today && (
+          <div className="mx-[22px] mt-4 bg-ink px-5 pb-4 pt-5 text-white">
+            <div className="flex items-center justify-between">
+              <p className="eyebrow flex items-center gap-2 text-accent">
+                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent" />
+                {t("TODAY'S WORKOUT")} · {t("WK")} {today.weekIndex + 1} {t("OF")} {today.totalWeeks}
+              </p>
+              <button
+                type="button"
+                onClick={() => navigate(`/programs/${today.program.id}`)}
+                className="eyebrow text-[10px] text-white/55 active:text-white"
+              >
+                {t("PLAN")} →
+              </button>
+            </div>
 
-      {data?.program && (
-        <button
-          type="button"
-          onClick={() => navigate(`/programs/${data.program!.id}`)}
-          className="mx-[22px] mt-4 flex items-center justify-between border border-ink bg-ink px-4 py-3.5 text-left text-white"
-        >
-          <div>
-            <p className="eyebrow flex items-center gap-1.5 text-white/55">
-              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent" />
-              {t("ACTIVE PROGRAM")}
+            <h2 className="display-title mt-2.5 text-[34px] leading-[0.95] text-white">{today.day.name}.</h2>
+            <p className="mt-1.5 text-[12px] text-white/60">
+              {today.program.name} · {t("Day")} {today.dayPos + 1} {t("of")} {today.daysPerWeek}
+              {today.isDeload ? ` · ${t("DELOAD")}` : ""}
             </p>
-            <p className="font-display text-[16px] font-bold">{data.program.name}</p>
-          </div>
-          <ChevronRight size={18} strokeWidth={2.5} />
-        </button>
-      )}
 
-      {routines === undefined ? null : routines.length === 0 ? (
-        <IronEmptyState
-          eyebrow={t("ROUTINES · 00")}
-          title={t("Build your\nfirst routine")}
-          body={t(
-            "Pick exercises, set target reps and rest. Reuse from the workout tab whenever you're ready to lift.",
-          )}
-          actionLabel={t("NEW ROUTINE")}
-          onAction={() => void newRoutine()}
-        />
-      ) : (
-        <>
-          <p className="eyebrow text-ink3 px-[22px] pb-2 pt-4">{t("MY ROUTINES")}</p>
-          <ul className="divide-y divide-hairline border-y border-hairline">
-            {routines.map((r, i) => (
-              <li key={r.id}>
-                <button
-                  type="button"
-                  onClick={() => navigate(`/workout/routine/${r.id}`)}
-                  className="flex w-full items-center justify-between px-[22px] py-4 text-left active:bg-chip"
-                >
-                  <div className="flex items-baseline gap-3">
-                    <span className="mono-num w-6 text-ink3">{String(i + 1).padStart(2, "0")}</span>
-                    <span className="font-display font-bold text-ink">{r.name}</span>
+            <div className="mt-4 flex items-center justify-between border-t border-white/15 pt-3.5">
+              <div className="flex gap-5 text-[11px] text-white/70">
+                <span>
+                  <b className="mr-1 font-display text-[16px] font-extrabold text-white">{today.exerciseCount}</b>
+                  {t("exercises")}
+                </span>
+                <span>
+                  <b className="mr-1 font-display text-[16px] font-extrabold text-white">~{estMin}</b>
+                  {t("min")}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => void startToday()}
+                disabled={today.exerciseCount === 0}
+                className="flex items-center gap-2 bg-accent px-4 py-2.5 text-white disabled:opacity-40"
+              >
+                <span className="eyebrow text-[12px]">{t("START")}</span>
+                <Play size={12} strokeWidth={2.5} fill="currentColor" />
+              </button>
+            </div>
+          </div>
+        )}
+
+        {routines === undefined ? null : routines.length === 0 ? (
+          <IronEmptyState
+            eyebrow={t("ROUTINES · 00")}
+            title={t("Build your\nfirst routine")}
+            body={t(
+              "Pick exercises, set target reps and rest. Reuse from the workout tab whenever you're ready to lift.",
+            )}
+            actionLabel={t("NEW ROUTINE")}
+            onAction={() => void newRoutine()}
+          />
+        ) : (
+          <>
+            <p className="eyebrow text-ink3 px-[22px] pb-2 pt-5">{t("MY ROUTINES")}</p>
+            <ul className="divide-y divide-hairline border-y border-hairline">
+              {routines.map(({ routine: r, exCount, muscles }, i) => (
+                <li key={r.id} className="flex items-center active:bg-chip">
+                  <button
+                    type="button"
+                    onClick={() => navigate(`/workout/routine/${r.id}`)}
+                    className="flex flex-1 items-center gap-3 py-3.5 pl-[22px] text-left"
+                  >
+                    <span className="mono-num w-6 shrink-0 text-[14px] font-bold text-ink3">{String(i + 1).padStart(2, "0")}</span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate font-display text-[17px] font-bold text-ink">{r.name}</span>
+                      <span className="mt-0.5 block truncate text-[11px] text-ink2">
+                        {[
+                          ...muscles.slice(0, 2).map((m) => t(MUSCLE_I18N_KEY[m])),
+                          r.lastUsed ? relativeDay(r.lastUsed, i18n.language) : t("not used yet"),
+                        ].join(" · ")}
+                      </span>
+                    </span>
+                    <span className="shrink-0 text-right">
+                      <span className="font-display text-[14px] font-bold text-ink">{exCount}</span>
+                      <span className="ml-0.5 text-[10px] font-semibold text-ink3">{t("ex")}</span>
+                    </span>
+                  </button>
+                  <div className="pr-[14px]">
+                    <IronMenu
+                      label={t("Routine options")}
+                      items={[
+                        {
+                          label: t("Edit"),
+                          icon: <Pencil size={15} strokeWidth={2.25} />,
+                          onClick: () => navigate(`/workout/routine/${r.id}/edit`),
+                        },
+                        {
+                          label: t("Delete"),
+                          icon: <Trash2 size={15} strokeWidth={2.25} />,
+                          danger: true,
+                          onClick: () => void removeRoutine(r.id, r.name),
+                        },
+                      ]}
+                    />
                   </div>
-                  {r.lastUsed && (
-                    <span className="mono-num text-[12px] text-ink3">{relativeDay(r.lastUsed, i18n.language)}</span>
-                  )}
-                </button>
-              </li>
-            ))}
-          </ul>
-        </>
-      )}
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
+      </div>
     </div>
   );
 }
