@@ -159,3 +159,91 @@ export async function routineExerciseCounts(routineIds: ID[]): Promise<Map<ID, n
   for (const r of rows) counts.set(r.routineId, (counts.get(r.routineId) ?? 0) + 1);
   return counts;
 }
+
+export interface ActiveProgramToday {
+  program: Program;
+  day: ProgramDay;
+  routineId: ID;
+  /** 0-based position within the week, and total days that week. */
+  dayPos: number;
+  daysPerWeek: number;
+  weekIndex: number;
+  totalWeeks: number;
+  isDeload: boolean;
+  exerciseCount: number;
+  totalSets: number;
+}
+
+/**
+ * The next workout the active program points at — used by the Workout tab's
+ * "Today's workout" CTA. Walks forward from the count of already-logged
+ * program-day sessions so the card advances day-by-day through the plan.
+ */
+export async function activeProgramToday(): Promise<ActiveProgramToday | null> {
+  const program = (await db.programs.toArray()).find((p) => p.isActive);
+  if (!program) return null;
+  const struct = await loadProgram(program.id);
+  const micros = struct?.mesos[0]?.micros ?? [];
+  if (!micros.length) return null;
+  const daysPerWeek = micros[0].days.length;
+  if (!daysPerWeek) return null;
+
+  // How many of this program's days have already been logged?
+  const dayIds = new Set(micros.flatMap((m) => m.days.map((d) => d.day.id)));
+  const completed = (await db.sessions.toArray()).filter(
+    (s) => s.durationSeconds > 0 && s.programDayID && dayIds.has(s.programDayID),
+  ).length;
+
+  const totalWeeks = micros.length;
+  const weekIndex = Math.min(totalWeeks - 1, Math.floor(completed / daysPerWeek));
+  const dayPos = completed % daysPerWeek;
+  const micro = micros[weekIndex];
+  const dayView = micro.days[dayPos] ?? micro.days[0];
+  if (!dayView?.day.routineId) return null;
+
+  const res = await db.routineExercises.where("routineId").equals(dayView.day.routineId).toArray();
+  const totalSets = res.reduce((n, r) => n + Math.max(1, r.targetSets), 0);
+
+  return {
+    program,
+    day: dayView.day,
+    routineId: dayView.day.routineId,
+    dayPos,
+    daysPerWeek,
+    weekIndex,
+    totalWeeks,
+    isDeload: micro.micro.isDeload,
+    exerciseCount: dayView.exerciseCount,
+    totalSets,
+  };
+}
+
+/**
+ * All-time best estimated 1RM (Epley) per exercise across finished sessions —
+ * the "PR" shown next to each exercise in the active workout. Excludes the
+ * in-progress session so a fresh log doesn't count against itself.
+ */
+export async function bestE1RMByExercise(
+  exerciseIds: ID[],
+  excludeSessionId: ID,
+): Promise<Map<ID, number>> {
+  if (!exerciseIds.length) return new Map();
+  const wanted = new Set(exerciseIds);
+  const finished = (await db.sessions.toArray()).filter(
+    (s) => s.durationSeconds > 0 && s.id !== excludeSessionId,
+  );
+  if (!finished.length) return new Map();
+  const sxs = (await db.sessionExercises.where("sessionId").anyOf(finished.map((s) => s.id)).toArray())
+    .filter((sx) => sx.exerciseId && wanted.has(sx.exerciseId));
+  const sxToEx = new Map(sxs.map((sx) => [sx.id, sx.exerciseId as ID]));
+  const sets = await db.workoutSets.where("sessionExerciseId").anyOf(sxs.map((s) => s.id)).toArray();
+  const best = new Map<ID, number>();
+  for (const s of sets) {
+    if (!s.isCompleted || s.kind !== "working") continue;
+    const exId = sxToEx.get(s.sessionExerciseId);
+    if (!exId) continue;
+    const e = OneRM.epley(s.weight, s.reps);
+    if (e > (best.get(exId) ?? 0)) best.set(exId, e);
+  }
+  return best;
+}
