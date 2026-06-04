@@ -6,11 +6,15 @@ import { db } from "@core/db/db";
 import { createRoutine, deleteRoutine, startProgramDay, startQuickWorkout, unfinishedSession } from "@core/db/mutations";
 import { activeProgramToday, programOwnedRoutineIds } from "@core/db/queries";
 import { overviewStats } from "@core/db/analytics";
+import { muscleRecovery } from "@core/db/recovery";
 import { MUSCLE_I18N_KEY } from "@core/models/enums";
 import { IronTopBar, IronToolbarButton } from "@ui/components/IronTopBar";
 import { IronEmptyState } from "@ui/components/IronEmptyState";
 import { IronMenu } from "@ui/components/IronMenu";
 import { relativeDay } from "@app/lib/format";
+
+// Fatigue-band dot color for the readiness banner.
+const DOT: Record<string, string> = { avoid: "bg-bad", notRecommended: "bg-fade", caution: "bg-warn" };
 
 export function WorkoutTab() {
   const { t, i18n } = useTranslation();
@@ -33,7 +37,9 @@ export function WorkoutTab() {
       const today = await activeProgramToday();
       const stats = await overviewStats();
       const open = await unfinishedSession();
-      return { routines, today, streak: stats.streakDays, open };
+      // muscleRecovery() is sorted fatigued-first, so the first <50% row is the worst.
+      const worst = (await muscleRecovery()).find((r) => r.recoveryPercentage < 50) ?? null;
+      return { routines, today, streak: stats.streakDays, open, worst };
     },
     [],
     undefined,
@@ -154,6 +160,21 @@ export function WorkoutTab() {
               </button>
             </div>
           </div>
+        )}
+
+        {/* Readiness banner — surfaces the most-fatigued trained muscle */}
+        {data?.worst && (
+          <button
+            type="button"
+            onClick={() => navigate("/recovery")}
+            className="mx-[22px] mt-3 flex w-[calc(100%-44px)] items-center gap-2.5 bg-accentSoft px-3.5 py-2.5 text-left"
+          >
+            <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${DOT[data.worst.verdict] ?? "bg-fade"}`} />
+            <span className="flex-1 text-[12px] text-accentInk">
+              <b>{t(MUSCLE_I18N_KEY[data.worst.muscleGroup])}</b> · <b>{Math.round(data.worst.recoveryPercentage)}%</b> — {t("load may auto-hold")}.
+            </span>
+            <span className="eyebrow shrink-0 text-[10px] text-ink2">{t("Details")} →</span>
+          </button>
         )}
 
         {/* Quick start ad-hoc workout */}

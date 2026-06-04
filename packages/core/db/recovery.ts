@@ -1,7 +1,7 @@
 import { db } from "./db";
 import type { Exercise, ID, RecoveryFactors } from "../models/types";
 import type { MuscleGroup } from "../models/enums";
-import { Recovery, type RecoveryResult, type RecoveryVerdict } from "../calc/recovery";
+import { Recovery, overallRecoveryScore, type RecoveryResult, type RecoveryVerdict } from "../calc/recovery";
 
 const DAY = 86_400_000;
 const dayStart = (ts: number) => Math.floor(ts / DAY) * DAY;
@@ -21,6 +21,65 @@ export async function latestFactors(): Promise<RecoveryFactors | undefined> {
 export async function todayFactors(): Promise<RecoveryFactors | undefined> {
   const start = dayStart(Date.now());
   return (await db.recoveryFactors.toArray()).find((f) => dayStart(f.date) === start);
+}
+
+export interface RecoveryScorePoint {
+  date: number;
+  score: number;
+}
+
+/** Daily overall-recovery score (0–100) for each check-in within the last `days`, oldest→newest. */
+export async function recoveryScoreHistory(days = 14): Promise<RecoveryScorePoint[]> {
+  const since = dayStart(Date.now()) - (days - 1) * DAY;
+  return (await db.recoveryFactors.toArray())
+    .filter((f) => f.date >= since)
+    .sort((a, b) => a.date - b.date)
+    .map((f) => ({ date: f.date, score: Math.round(overallRecoveryScore(f)) }));
+}
+
+export interface FactorAverages {
+  sleepQuality: number;
+  nutritionQuality: number;
+  stressLevel: number;
+  energyLevel: number;
+  sorenessLevel: number;
+}
+const FACTOR_KEYS: (keyof FactorAverages)[] = [
+  "sleepQuality",
+  "nutritionQuality",
+  "stressLevel",
+  "energyLevel",
+  "sorenessLevel",
+];
+
+function averageFactors(rows: RecoveryFactors[]): FactorAverages {
+  const n = rows.length || 1;
+  const out = {} as FactorAverages;
+  for (const k of FACTOR_KEYS) out[k] = rows.reduce((s, r) => s + r[k], 0) / n;
+  return out;
+}
+
+/**
+ * Per-factor averages for the last `days` vs the prior `days` window. Drives the
+ * check-in "vs Nd avg" delta and the Trends per-factor insights. `null` when no
+ * check-ins exist in either window.
+ */
+export async function factorTrends(
+  days = 7,
+): Promise<{ current: FactorAverages; previous: FactorAverages; currentCount: number; previousCount: number } | null> {
+  const today = dayStart(Date.now());
+  const curSince = today - (days - 1) * DAY;
+  const prevSince = curSince - days * DAY;
+  const all = await db.recoveryFactors.toArray();
+  const current = all.filter((f) => f.date >= curSince);
+  const previous = all.filter((f) => f.date >= prevSince && f.date < curSince);
+  if (!current.length && !previous.length) return null;
+  return {
+    current: averageFactors(current),
+    previous: averageFactors(previous),
+    currentCount: current.length,
+    previousCount: previous.length,
+  };
 }
 
 /** Per-muscle recovery %, fatigued-first. Derives last-trained + volume from finished sessions. */
