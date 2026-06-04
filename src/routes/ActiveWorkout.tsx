@@ -2,10 +2,11 @@ import { useEffect, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { useNavigate, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { ArrowDown, ArrowUp, Check, ChevronDown, Lightbulb, Minus, Plus, Trash2, X } from "lucide-react";
+import { ArrowDown, ArrowUp, Check, ChevronDown, Lightbulb, Link, Minus, Plus, Timer, Trash2, Unlink, X } from "lucide-react";
 import { db } from "@core/db/db";
 import {
-  addExerciseToSession, addSet, deleteSet, discardSession, finishSession, lastCompletedSets, updateSet,
+  addExerciseToSession, addSet, deleteSessionExercise, deleteSet, discardSession, finishSession,
+  groupSessionExerciseWithPrevious, lastCompletedSets, ungroupSessionExercise, updateSet,
 } from "@core/db/mutations";
 import { bestE1RMByExercise } from "@core/db/queries";
 import { muscleRecovery } from "@core/db/recovery";
@@ -15,10 +16,11 @@ import { MUSCLE_I18N_KEY } from "@core/models/enums";
 import type { RecoveryVerdict } from "@core/calc/recovery";
 import { OneRM } from "@core/calc/oneRM";
 import { STANDARD_KG_PLATES, STANDARD_LB_PLATES, plates } from "@core/calc/plate";
-import { supersetBadge } from "@core/superset";
+import { isInSuperset, supersetBadge } from "@core/superset";
 import { formatDuration, localizedExerciseName, weightUnit } from "@app/lib/format";
 import { useRestTimer } from "@app/hooks/useRestTimer";
 import { ExercisePicker } from "@app/components/ExercisePicker";
+import { SwipeRow } from "@app/components/SwipeRow";
 
 interface Block {
   sxId: ID;
@@ -69,6 +71,8 @@ export function ActiveWorkout() {
   const [collapsedEx, setCollapsedEx] = useState<Set<ID>>(() => new Set());
   const [editingSetId, setEditingSetId] = useState<ID | null>(null);
   const [picking, setPicking] = useState(false);
+  // Which exercise row has a swipe-action panel open, and on which side.
+  const [swipe, setSwipe] = useState<{ id: ID; side: "left" | "right" } | null>(null);
 
   const toggle = (set: Set<ID>, id: ID) => {
     const next = new Set(set);
@@ -142,6 +146,8 @@ export function ActiveWorkout() {
   const currentExercise = firstIncomplete === -1 ? blocks.length : firstIncomplete + 1;
   const nextBlock = blocks[currentIdx + 1];
   const volLabel = volume >= 1000 ? `${(volume / 1000).toFixed(1)}k` : String(Math.round(volume));
+  // Superset run membership/badges depend on the ordered group keys across all blocks.
+  const groupItems = blocks.map((x) => ({ supersetGroupId: x.supersetGroupId }));
 
   async function finish() {
     await finishSession(sessionId);
@@ -195,7 +201,10 @@ export function ActiveWorkout() {
         <GridStat label={t("EXERCISE")} value={`${currentExercise}/${blocks.length}`} last />
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto pb-40">
+      <div
+        className="min-h-0 flex-1 overflow-y-auto pb-40"
+        onScroll={() => { if (swipe) setSwipe(null); }}
+      >
         {blocks.map((b, bi) => {
           const exDone = b.sets.length > 0 && b.sets.every((s) => s.isCompleted);
           const isCurrent = bi === currentIdx && !exDone;
@@ -206,10 +215,31 @@ export function ActiveWorkout() {
           const rec = b.exercise ? recByMuscle.get(b.exercise.muscleGroup) : undefined;
           const top = b.sets.length ? Math.max(...b.sets.map((s) => s.weight)) : 0;
           const blockVol = b.sets.reduce((v, s) => v + s.weight * s.reps, 0);
-          const badge = supersetBadge(blocks.map((x) => ({ supersetGroupId: x.supersetGroupId })), bi);
+          const badge = supersetBadge(groupItems, bi);
+          const grouped = isInSuperset(groupItems, bi);
+          const editingInBlock = b.sets.some((s) => s.id === editingSetId);
+          // Swipe right reveals the superset link (or unlink); swipe left reveals delete.
+          const leftAction = grouped
+            ? { icon: <Unlink size={18} strokeWidth={2.25} />, label: t("Ungroup"), bg: "bg-ink",
+                onAction: () => void ungroupSessionExercise(b.sxId) }
+            : bi > 0
+              ? { icon: <Link size={18} strokeWidth={2.25} />, label: t("Superset"), bg: "bg-accent",
+                  onAction: () => void groupSessionExerciseWithPrevious(b.sxId) }
+              : undefined;
+          const rightAction = {
+            icon: <Trash2 size={18} strokeWidth={2.25} />, label: t("Delete"), bg: "bg-bad",
+            onAction: () => { if (confirm(`${t("Delete exercise")}?`)) void deleteSessionExercise(b.sxId); },
+          };
 
           return (
             <section key={b.sxId} className="border-b border-rule">
+              <SwipeRow
+                left={leftAction}
+                right={rightAction}
+                disabled={editingInBlock}
+                open={swipe?.id === b.sxId ? swipe.side : null}
+                onOpenChange={(side) => setSwipe(side ? { id: b.sxId, side } : null)}
+              >
               {/* Header */}
               <button
                 type="button"
@@ -334,16 +364,28 @@ export function ActiveWorkout() {
                       />
                     ),
                   )}
-                  <button
-                    type="button"
-                    onClick={() => void addSet(b.sxId)}
-                    className="mt-2 flex w-full items-center justify-center gap-1.5 border border-dashed border-rule py-2 text-ink2 active:bg-chip"
-                  >
-                    <Plus size={13} strokeWidth={2.5} />
-                    <span className="eyebrow text-[11px]">{t("Add set")}</span>
-                  </button>
+                  <div className="mt-2 flex items-center justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => startRest(b.restSeconds)}
+                      aria-label={t("Rest timer")}
+                      className="flex h-8 items-center gap-1.5 border border-rule px-2.5 text-ink2 active:bg-chip"
+                    >
+                      <Timer size={14} strokeWidth={2.25} />
+                      <span className="mono-num text-[11px]">{formatDuration(b.restSeconds)}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void addSet(b.sxId)}
+                      aria-label={t("Add set")}
+                      className="grid h-8 w-8 place-items-center border border-dashed border-rule text-ink2 active:bg-chip"
+                    >
+                      <Plus size={16} strokeWidth={2.5} />
+                    </button>
+                  </div>
                 </div>
               )}
+              </SwipeRow>
             </section>
           );
         })}
