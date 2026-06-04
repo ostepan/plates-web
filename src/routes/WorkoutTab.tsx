@@ -1,9 +1,9 @@
 import { useLiveQuery } from "dexie-react-hooks";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { CalendarDays, Pencil, Play, Plus, Trash2 } from "lucide-react";
+import { CalendarDays, Pencil, Play, Plus, Trash2, Zap } from "lucide-react";
 import { db } from "@core/db/db";
-import { createRoutine, deleteRoutine, startProgramDay } from "@core/db/mutations";
+import { createRoutine, deleteRoutine, startProgramDay, startQuickWorkout, unfinishedSession } from "@core/db/mutations";
 import { activeProgramToday, programOwnedRoutineIds } from "@core/db/queries";
 import { overviewStats } from "@core/db/analytics";
 import { muscleRecovery } from "@core/db/recovery";
@@ -36,9 +36,10 @@ export function WorkoutTab() {
       );
       const today = await activeProgramToday();
       const stats = await overviewStats();
+      const open = await unfinishedSession();
       // muscleRecovery() is sorted fatigued-first, so the first <50% row is the worst.
       const worst = (await muscleRecovery()).find((r) => r.recoveryPercentage < 50) ?? null;
-      return { routines, today, streak: stats.streakDays, worst };
+      return { routines, today, streak: stats.streakDays, open, worst };
     },
     [],
     undefined,
@@ -57,6 +58,11 @@ export function WorkoutTab() {
     if (sessionId) navigate(`/active/${sessionId}`);
   }
 
+  async function quickStart() {
+    const id = await startQuickWorkout(t("Quick workout"));
+    navigate(`/active/${id}`);
+  }
+
   async function removeRoutine(id: string, name: string) {
     if (!window.confirm(`${t("Delete routine")} "${name}"? ${t("Past sessions are kept.")}`)) return;
     await deleteRoutine(id);
@@ -64,6 +70,7 @@ export function WorkoutTab() {
 
   const routines = data?.routines;
   const today = data?.today;
+  const open = data?.open;
   const estMin = today ? Math.max(15, Math.round(today.totalSets * 3.5)) : 0;
 
   return (
@@ -83,7 +90,27 @@ export function WorkoutTab() {
       />
 
       <div className="min-h-0 flex-1 overflow-y-auto pb-6">
-        <p className="eyebrow text-ink3 px-[22px] pt-3">
+        {/* Resume an in-progress workout */}
+        {open && (
+          <button
+            type="button"
+            onClick={() => navigate(`/active/${open.id}`)}
+            className="mx-[22px] mt-4 flex w-[calc(100%-44px)] items-center gap-3 border border-accent bg-accentSoft px-4 py-3.5 text-left active:opacity-90"
+          >
+            <span className="grid h-9 w-9 shrink-0 place-items-center bg-accent text-white">
+              <Play size={18} strokeWidth={2.5} fill="currentColor" />
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="eyebrow text-accent">{t("RESUME WORKOUT")}</p>
+              <p className="truncate font-display text-[15px] font-bold text-ink">
+                {open.routineNameSnapshot || t("Workout")}
+              </p>
+            </div>
+            <span className="mono-num shrink-0 text-[11px] text-ink2">{relativeDay(open.date, i18n.language)}</span>
+          </button>
+        )}
+
+        <p className="eyebrow px-[22px] pt-3 text-ink3">
           {todayLabel}
           {data?.streak ? ` · ${data.streak}-${t("day streak")}` : ""}
         </p>
@@ -150,6 +177,16 @@ export function WorkoutTab() {
           </button>
         )}
 
+        {/* Quick start ad-hoc workout */}
+        <button
+          type="button"
+          onClick={() => void quickStart()}
+          className="mx-[22px] mt-3 flex w-[calc(100%-44px)] items-center justify-center gap-2 border border-dashed border-rule py-3 text-[11px] font-bold uppercase tracking-eyebrow text-ink2 active:bg-chip"
+        >
+          <Zap size={14} strokeWidth={2.5} />
+          {t("Quick start")}
+        </button>
+
         {routines === undefined ? null : routines.length === 0 ? (
           <IronEmptyState
             eyebrow={t("ROUTINES · 00")}
@@ -162,7 +199,7 @@ export function WorkoutTab() {
           />
         ) : (
           <>
-            <p className="eyebrow text-ink3 px-[22px] pb-2 pt-5">{t("MY ROUTINES")}</p>
+            <p className="eyebrow px-[22px] pb-2 pt-5 text-ink3">{t("MY ROUTINES")}</p>
             <ul className="divide-y divide-hairline border-y border-hairline">
               {routines.map(({ routine: r, exCount, muscles }, i) => (
                 <li key={r.id} className="flex items-center active:bg-chip">

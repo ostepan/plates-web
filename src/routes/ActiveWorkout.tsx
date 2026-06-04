@@ -5,7 +5,7 @@ import { useTranslation } from "react-i18next";
 import { ArrowDown, ArrowUp, Check, ChevronDown, Lightbulb, Minus, Plus, Trash2, X } from "lucide-react";
 import { db } from "@core/db/db";
 import {
-  addSet, deleteSet, discardSession, finishSession, lastCompletedSets, updateSet,
+  addExerciseToSession, addSet, deleteSet, discardSession, finishSession, lastCompletedSets, updateSet,
 } from "@core/db/mutations";
 import { bestE1RMByExercise } from "@core/db/queries";
 import { muscleRecovery } from "@core/db/recovery";
@@ -18,6 +18,7 @@ import { STANDARD_KG_PLATES, STANDARD_LB_PLATES, plates } from "@core/calc/plate
 import { supersetBadge } from "@core/superset";
 import { formatDuration, localizedExerciseName, weightUnit } from "@app/lib/format";
 import { useRestTimer } from "@app/hooks/useRestTimer";
+import { ExercisePicker } from "@app/components/ExercisePicker";
 
 interface Block {
   sxId: ID;
@@ -67,6 +68,7 @@ export function ActiveWorkout() {
   const [openCues, setOpenCues] = useState<Set<ID>>(() => new Set());
   const [collapsedEx, setCollapsedEx] = useState<Set<ID>>(() => new Set());
   const [editingSetId, setEditingSetId] = useState<ID | null>(null);
+  const [picking, setPicking] = useState(false);
 
   const toggle = (set: Set<ID>, id: ID) => {
     const next = new Set(set);
@@ -182,7 +184,7 @@ export function ActiveWorkout() {
           </div>
           <div className="text-right">
             <p className="mono-num text-[24px] font-bold text-ink">{formatDuration(elapsed)}</p>
-            <p className="eyebrow text-ink3 text-[9px]">{t("ELAPSED")}</p>
+            <p className="eyebrow text-[9px] text-ink3">{t("ELAPSED")}</p>
           </div>
         </div>
       </header>
@@ -256,7 +258,7 @@ export function ActiveWorkout() {
                 <div className="mt-1.5 ml-[26px] flex items-center gap-3.5 text-[11px] text-ink2">
                   {b.target && (
                     <span>
-                      <span className="eyebrow mr-1 text-ink3 text-[9px]">{t("TGT")}</span>
+                      <span className="eyebrow mr-1 text-[9px] text-ink3">{t("TGT")}</span>
                       <b className="font-display text-ink">
                         {b.target.sets}×{b.target.min}{b.target.min !== b.target.max ? `–${b.target.max}` : ""}
                       </b>
@@ -264,7 +266,7 @@ export function ActiveWorkout() {
                   )}
                   {b.pr ? (
                     <span>
-                      <span className="eyebrow mr-1 text-ink3 text-[9px]">{t("PR")}</span>
+                      <span className="eyebrow mr-1 text-[9px] text-ink3">{t("PR")}</span>
                       <b className="font-display text-ink">{Math.round(b.pr)}</b>
                     </span>
                   ) : null}
@@ -290,16 +292,16 @@ export function ActiveWorkout() {
                 >
                   <span>{t("Top")} <b className="font-display text-ink">{top} × {b.sets.at(-1)?.reps ?? 0}</b></span>
                   <span>{t("Vol")} <b className="font-display text-ink">{blockVol >= 1000 ? `${(blockVol / 1000).toFixed(1)}k` : Math.round(blockVol)}</b></span>
-                  <span className="eyebrow ml-auto text-ink3 text-[9px]">{t("Tap to revise")} ↓</span>
+                  <span className="eyebrow ml-auto text-[9px] text-ink3">{t("Tap to revise")} ↓</span>
                 </button>
               ) : (
                 <div className="px-[22px] pb-3">
                   <div className="grid grid-cols-[1.9rem_1fr_1fr_3rem_3.6rem_1.9rem] items-center gap-1.5 border-b border-hairline py-1.5">
-                    <span className="eyebrow text-ink3 text-[9px]">{t("SET")}</span>
-                    <span className="eyebrow text-ink3 text-[9px]">{unit.toUpperCase()}</span>
-                    <span className="eyebrow text-ink3 text-[9px]">{t("REPS")}</span>
-                    <span className="eyebrow text-ink3 text-[9px]">{t("RIR")}</span>
-                    <span className="eyebrow text-right text-ink3 text-[9px]">{t("LAST")}</span>
+                    <span className="eyebrow text-[9px] text-ink3">{t("SET")}</span>
+                    <span className="eyebrow text-[9px] text-ink3">{unit.toUpperCase()}</span>
+                    <span className="eyebrow text-[9px] text-ink3">{t("REPS")}</span>
+                    <span className="eyebrow text-[9px] text-ink3">{t("RIR")}</span>
+                    <span className="eyebrow text-right text-[9px] text-ink3">{t("LAST")}</span>
                     <span />
                   </div>
                   {b.sets.map((s, i) =>
@@ -346,7 +348,19 @@ export function ActiveWorkout() {
           );
         })}
 
-        <div className="px-[22px] pt-5">
+        {/* Add exercise mid-workout */}
+        <div className="px-[22px] pt-4">
+          <button
+            type="button"
+            onClick={() => setPicking(true)}
+            className="flex w-full items-center justify-center gap-1.5 border border-dashed border-rule py-3 text-[11px] font-bold uppercase tracking-eyebrow text-ink2 active:bg-chip"
+          >
+            <Plus size={14} strokeWidth={2.75} />
+            {t("Add exercise")}
+          </button>
+        </div>
+
+        <div className="px-[22px] pt-3 pb-5">
           <button
             type="button"
             onClick={() => void finish()}
@@ -356,6 +370,16 @@ export function ActiveWorkout() {
           </button>
         </div>
       </div>
+
+      {picking && (
+        <ExercisePicker
+          onPick={(exerciseId) => {
+            void addExerciseToSession(sessionId, exerciseId);
+            setPicking(false);
+          }}
+          onClose={() => setPicking(false)}
+        />
+      )}
 
       {rest.running && (
         <div className="absolute inset-x-0 bottom-0 z-30 flex items-center gap-3 border-t-2 border-accent bg-ink px-[18px] py-3 text-white pb-[max(0.75rem,env(safe-area-inset-bottom))]">
@@ -392,7 +416,7 @@ export function ActiveWorkout() {
 function GridStat({ label, value, last }: { label: string; value: string; last?: boolean }) {
   return (
     <div className={`px-[22px] py-2.5 ${last ? "" : "border-r border-rule"}`}>
-      <p className="eyebrow text-ink3 text-[9px]">{label}</p>
+      <p className="eyebrow text-[9px] text-ink3">{label}</p>
       <p className="mono-num text-[18px] font-bold text-ink">{value}</p>
     </div>
   );
