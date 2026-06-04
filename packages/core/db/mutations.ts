@@ -297,6 +297,49 @@ export async function addExerciseToSession(sessionId: ID, exerciseId: ID): Promi
   return sxId;
 }
 
+/** Remove a session exercise and its sets (mid-workout swipe-to-delete). */
+export async function deleteSessionExercise(sessionExerciseId: ID): Promise<void> {
+  await db.transaction("rw", db.sessionExercises, db.workoutSets, async () => {
+    await db.workoutSets.where("sessionExerciseId").equals(sessionExerciseId).delete();
+    await db.sessionExercises.delete(sessionExerciseId);
+  });
+}
+
+/** Join a session exercise into a superset with the one directly above it. */
+export async function groupSessionExerciseWithPrevious(sessionExerciseId: ID): Promise<void> {
+  const sx = await db.sessionExercises.get(sessionExerciseId);
+  if (!sx) return;
+  const ordered = (await db.sessionExercises.where("sessionId").equals(sx.sessionId).toArray())
+    .sort((a, b) => a.order - b.order);
+  const idx = ordered.findIndex((s) => s.id === sessionExerciseId);
+  if (idx <= 0) return;
+  const prev = ordered[idx - 1];
+  if (prev.supersetGroupID) {
+    await db.sessionExercises.update(sessionExerciseId, { supersetGroupID: prev.supersetGroupID });
+  } else {
+    const key = newId();
+    await db.sessionExercises.update(prev.id, { supersetGroupID: key });
+    await db.sessionExercises.update(sessionExerciseId, { supersetGroupID: key });
+  }
+}
+
+/** Remove a session exercise from its superset; drops any member left with no neighbor. */
+export async function ungroupSessionExercise(sessionExerciseId: ID): Promise<void> {
+  const sx = await db.sessionExercises.get(sessionExerciseId);
+  if (!sx) return;
+  const key = sx.supersetGroupID;
+  await db.sessionExercises.update(sessionExerciseId, { supersetGroupID: undefined });
+  if (!key) return;
+  const after = (await db.sessionExercises.where("sessionId").equals(sx.sessionId).toArray())
+    .sort((a, b) => a.order - b.order);
+  for (let i = 0; i < after.length; i++) {
+    if (after[i].supersetGroupID !== key) continue;
+    const prev = i > 0 && after[i - 1].supersetGroupID === key;
+    const next = i < after.length - 1 && after[i + 1].supersetGroupID === key;
+    if (!prev && !next) await db.sessionExercises.update(after[i].id, { supersetGroupID: undefined });
+  }
+}
+
 export async function addSet(sessionExerciseId: ID, kind: SetKind = "working"): Promise<ID> {
   const existing = await db.workoutSets.where("sessionExerciseId").equals(sessionExerciseId).toArray();
   const last = existing.sort((a, b) => a.order - b.order).at(-1);
