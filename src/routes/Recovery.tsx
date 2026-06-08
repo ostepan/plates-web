@@ -79,6 +79,9 @@ function RecoveryStatus() {
   const freshest = [...rows].sort((a, b) => b.recoveryPercentage - a.recoveryPercentage)[0];
   const fatigued = rows.filter((r) => r.recoveryPercentage < 50);
   const skipNames = fatigued.map((r) => t(MUSCLE_I18N_KEY[r.muscleGroup]));
+  // When even the freshest trained muscle is still under 50%, "Train X — 0%"
+  // would contradict the "skip X" line, so recommend rest instead.
+  const allRecovering = freshest.recoveryPercentage < 50;
 
   return (
     <div className="pb-6">
@@ -89,12 +92,16 @@ function RecoveryStatus() {
           {t("Today's recommendation")}
         </p>
         <p className="mt-1.5 font-display text-[20px] font-extrabold leading-tight text-white [font-variant-numeric:tabular-nums]">
-          {t("Train {{muscle}}", { muscle: t(MUSCLE_I18N_KEY[freshest.muscleGroup]) })} — {Math.round(freshest.recoveryPercentage)}% {t("recovered")}.
+          {allRecovering
+            ? t("Everything's still recovering.")
+            : `${t("Train {{muscle}}", { muscle: t(MUSCLE_I18N_KEY[freshest.muscleGroup]) })} — ${Math.round(freshest.recoveryPercentage)}% ${t("recovered")}.`}
         </p>
         <p className="mt-1.5 text-[12px] leading-relaxed text-white/65">
-          {skipNames.length
-            ? t("Skip {{muscles}} today — still under 50%.", { muscles: skipNames.join(", ") })
-            : t("Everything's recovered enough to train hard today.")}
+          {allRecovering
+            ? t("Rest today, or train a muscle group you haven't hit recently.")
+            : skipNames.length
+              ? t("Skip {{muscles}} today — still under 50%.", { muscles: skipNames.join(", ") })
+              : t("Everything's recovered enough to train hard today.")}
         </p>
       </div>
 
@@ -151,7 +158,9 @@ const FACTORS = [
 // RIR-style 5-stop scale (redlined → fresh), matching the Iron set-row colors.
 const BAND_BG = ["bg-bad", "bg-fade", "bg-warn", "bg-[#9ba85a]", "bg-ok"];
 const BAND_TEXT = ["text-bad", "text-fade", "text-warn", "text-[#9ba85a]", "text-ok"];
-const bandIdx = (v: number) => Math.min(4, Math.max(0, Math.floor(v / 2.5)));
+// 0–10 slider value → one of 5 color bands (index 0–4): 10 / 5 bands = 2.5 per band.
+const BAND_STEP = 2.5;
+const bandIdx = (v: number) => Math.min(4, Math.max(0, Math.floor(v / BAND_STEP)));
 /** Value-display tone: higher is better, inverted for stress/soreness. */
 const valueTone = (v: number, invert: boolean) => (invert ? 4 - bandIdx(v) : bandIdx(v));
 /** Per-cell tone for a tick at index n (0–10). */

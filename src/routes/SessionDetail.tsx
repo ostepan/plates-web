@@ -31,7 +31,8 @@ export function SessionDetail() {
     return { session, blocks };
   }, [sessionId]);
 
-  if (!data) return null;
+  if (data === undefined) return <SessionDetailSkeleton onBack={() => navigate("/history")} />;
+  if (data === null) return null;
   const { session, blocks } = data;
 
   return (
@@ -73,6 +74,39 @@ export function SessionDetail() {
             </ul>
           </section>
         ))}
+      </div>
+    </div>
+  );
+}
+
+/** Placeholder shown while the session loads — mirrors the detail layout. */
+function SessionDetailSkeleton({ onBack }: { onBack: () => void }) {
+  const { t } = useTranslation();
+  return (
+    <div className="flex h-[100dvh] flex-col bg-bg">
+      <IronTopBar
+        leading={
+          <IronToolbarButton onClick={onBack} label={t("Back")}>
+            <ChevronLeft size={18} strokeWidth={2.5} />
+          </IronToolbarButton>
+        }
+      />
+      <div className="animate-pulse px-[22px] pt-2 motion-reduce:animate-none" aria-hidden="true">
+        <span className="mb-2 block h-2.5 w-28 bg-chip" />
+        <span className="block h-7 w-1/2 bg-chip" />
+        <span className="mt-2 block h-3.5 w-20 bg-chip" />
+        <div className="mt-6 space-y-5">
+          {[0, 1, 2].map((b) => (
+            <div key={b}>
+              <span className="block h-4 w-2/5 bg-chip" />
+              <div className="mt-2 space-y-1.5">
+                {[0, 1, 2].map((s) => (
+                  <span key={s} className="block h-3 w-28 bg-chip" />
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );

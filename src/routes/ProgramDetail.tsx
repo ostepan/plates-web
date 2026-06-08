@@ -20,7 +20,7 @@ export function ProgramDetail() {
   const { t } = useTranslation();
 
   const data = useLiveQuery(() => loadProgram(id), [id]);
-  if (data === undefined) return null;
+  if (data === undefined) return <ProgramDetailSkeleton onBack={() => navigate("/programs")} />;
   if (data === null) {
     navigate("/programs", { replace: true });
     return null;
@@ -99,7 +99,7 @@ export function ProgramDetail() {
                       <button
                         key={dv.day.id}
                         type="button"
-                        title={dv.day.name}
+                        aria-label={dv.day.name}
                         onClick={() => void startDay(dv.day.id)}
                         className={`mono-num border px-2 py-1 text-[11px] ${
                           wv.micro.isDeload ? "border-rule bg-chip text-ink2" : "border-rule bg-card text-ink"
@@ -133,6 +133,40 @@ export function ProgramDetail() {
             {program.isActive ? t("DEACTIVATE") : t("ACTIVATE PROGRAM")}
           </span>
         </button>
+      </div>
+    </div>
+  );
+}
+
+/** Placeholder shown while the program loads — mirrors the header + schedule grid. */
+function ProgramDetailSkeleton({ onBack }: { onBack: () => void }) {
+  const { t } = useTranslation();
+  return (
+    <div className="flex h-[100dvh] flex-col bg-bg">
+      <IronTopBar
+        leading={
+          <IronToolbarButton onClick={onBack} label={t("Back")}>
+            <ChevronLeft size={18} strokeWidth={2.5} />
+          </IronToolbarButton>
+        }
+      />
+      <div className="animate-pulse px-[22px] pt-2 motion-reduce:animate-none" aria-hidden="true">
+        <span className="mb-2 block h-2.5 w-32 bg-chip" />
+        <span className="block h-8 w-2/3 bg-chip" />
+        <span className="mt-6 block h-2.5 w-24 bg-chip" />
+        <div className="mt-3 space-y-3">
+          {[0, 1, 2, 3].map((i) => (
+            <div key={i} className="flex items-center gap-3">
+              <span className="block h-4 w-6 bg-chip" />
+              <span className="block h-4 w-12 bg-chip" />
+              <div className="flex gap-1">
+                {[0, 1, 2].map((d) => (
+                  <span key={d} className="block h-6 w-8 bg-chip" />
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );

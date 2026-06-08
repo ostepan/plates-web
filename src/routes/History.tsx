@@ -28,7 +28,7 @@ export function History() {
           </IronToolbarButton>
         }
       />
-      {sessions === undefined ? null : sessions.length === 0 ? (
+      {sessions === undefined ? <HistorySkeleton /> : sessions.length === 0 ? (
         <IronEmptyState
           eyebrow={t("HISTORY · 00")}
           title={t("No history\nyet")}
@@ -62,5 +62,22 @@ export function History() {
         </ul>
       )}
     </div>
+  );
+}
+
+/** Placeholder shown while history loads — mirrors the session rows. */
+function HistorySkeleton() {
+  return (
+    <ul className="animate-pulse divide-y divide-hairline overflow-y-auto motion-reduce:animate-none" aria-hidden="true">
+      {[0, 1, 2, 3, 4].map((i) => (
+        <li key={i} className="flex items-center justify-between px-[22px] py-4">
+          <span>
+            <span className="block h-4 w-32 bg-chip" />
+            <span className="mt-1.5 block h-2.5 w-24 bg-chip" />
+          </span>
+          <span className="block h-4 w-16 bg-chip" />
+        </li>
+      ))}
+    </ul>
   );
 }

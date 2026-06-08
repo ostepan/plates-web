@@ -66,7 +66,7 @@ export function BodyWeight() {
         </div>
       )}
 
-      {entries === undefined ? null : entries.length === 0 ? (
+      {entries === undefined ? <BodyWeightSkeleton /> : entries.length === 0 ? (
         <IronEmptyState
           eyebrow={t("BODY WEIGHT · 00")}
           title={t("No weigh-ins\nyet")}
@@ -97,5 +97,22 @@ function Stat({ label, value }: { label: string; value: string }) {
       <p className="eyebrow text-ink3 text-[9px]">{label}</p>
       <p className="mono-num text-[20px] font-black text-ink">{value}</p>
     </div>
+  );
+}
+
+/** Placeholder shown while weigh-ins load — mirrors the entry rows. */
+function BodyWeightSkeleton() {
+  return (
+    <ul className="animate-pulse divide-y divide-hairline overflow-y-auto motion-reduce:animate-none" aria-hidden="true">
+      {[0, 1, 2, 3].map((i) => (
+        <li key={i} className="flex items-center justify-between px-[22px] py-3.5">
+          <span className="flex items-center gap-3">
+            <span className="block h-4 w-20 bg-chip" />
+            <span className="block h-3 w-16 bg-chip" />
+          </span>
+          <span className="block h-4 w-4 bg-chip" />
+        </li>
+      ))}
+    </ul>
   );
 }

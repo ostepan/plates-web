@@ -76,7 +76,7 @@ export function ExercisesTab() {
         </div>
       </div>
 
-      {exercises === undefined ? null : total === 0 ? (
+      {exercises === undefined ? <ExercisesSkeleton /> : total === 0 ? (
         <p className="px-[22px] py-10 text-center text-[13px] text-ink2">
           {t("Try a different keyword or clear the search.")}
         </p>
@@ -143,5 +143,32 @@ function Filter({
         </option>
       ))}
     </select>
+  );
+}
+
+/** Placeholder shown while exercises load — mirrors the grouped list. */
+function ExercisesSkeleton() {
+  return (
+    <div className="flex-1 animate-pulse overflow-y-auto motion-reduce:animate-none" aria-hidden="true">
+      {[0, 1].map((g) => (
+        <section key={g}>
+          <div className="flex items-baseline justify-between border-b border-hairline px-[22px] py-1.5">
+            <span className="block h-2.5 w-16 bg-chip" />
+            <span className="block h-2.5 w-4 bg-chip" />
+          </div>
+          <ul className="divide-y divide-hairline">
+            {[0, 1, 2, 3].map((i) => (
+              <li key={i} className="flex items-center justify-between px-[22px] py-3">
+                <span className="min-w-0">
+                  <span className="block h-4 w-40 bg-chip" />
+                  <span className="mt-1 block h-2.5 w-24 bg-chip" />
+                </span>
+                <span className="block h-4 w-4 bg-chip" />
+              </li>
+            ))}
+          </ul>
+        </section>
+      ))}
+    </div>
   );
 }

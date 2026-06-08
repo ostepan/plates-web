@@ -21,7 +21,11 @@ export function RoutineDetail() {
       const res = (await db.routineExercises.where("routineId").equals(id).toArray()).sort(
         (a, b) => a.order - b.order,
       );
-      return Promise.all(res.map(async (re) => ({ re, ex: await db.exercises.get(re.exerciseId) })));
+      // One query for all exercises, grouped in memory (avoids a get() per row).
+      const ids = res.map((re) => re.exerciseId);
+      const exList = ids.length ? await db.exercises.where("id").anyOf(ids).toArray() : [];
+      const exById = new Map(exList.map((e) => [e.id, e]));
+      return res.map((re) => ({ re, ex: exById.get(re.exerciseId) }));
     },
     [id],
     [],
@@ -47,7 +51,7 @@ export function RoutineDetail() {
 
   const swaps = useLiveQuery(() => getSwapSuggestions(id), [id], []);
 
-  if (routine === undefined) return null;
+  if (routine === undefined) return <RoutineDetailSkeleton onBack={() => navigate("/workout")} />;
 
   const muscles = [...new Set(rows.map((r) => r.ex?.muscleGroup).filter((m): m is NonNullable<typeof m> => !!m))];
 
@@ -185,6 +189,35 @@ export function RoutineDetail() {
           <Play size={16} strokeWidth={2.5} fill="currentColor" />
           <span className="eyebrow text-[13px]">{t("START WORKOUT")}</span>
         </button>
+      </div>
+    </div>
+  );
+}
+
+/** Placeholder shown while the routine loads — mirrors the detail layout. */
+function RoutineDetailSkeleton({ onBack }: { onBack: () => void }) {
+  const { t } = useTranslation();
+  return (
+    <div className="flex h-[100dvh] flex-col bg-bg">
+      <IronTopBar
+        leading={
+          <IronToolbarButton onClick={onBack} label={t("Back")}>
+            <ChevronLeft size={18} strokeWidth={2.5} />
+          </IronToolbarButton>
+        }
+      />
+      <div className="animate-pulse px-[22px] pt-2 motion-reduce:animate-none" aria-hidden="true">
+        <span className="mb-2 block h-2.5 w-32 bg-chip" />
+        <span className="block h-8 w-2/3 bg-chip" />
+        <span className="mt-4 block h-14 w-full bg-chip" />
+        <div className="mt-5 space-y-3.5">
+          {[0, 1, 2, 3].map((i) => (
+            <div key={i} className="flex items-center justify-between">
+              <span className="block h-4 w-1/2 bg-chip" />
+              <span className="block h-3 w-16 bg-chip" />
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );

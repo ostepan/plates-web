@@ -42,4 +42,19 @@ export default defineConfig({
       "@app": fileURLToPath(new URL("./src", import.meta.url)),
     },
   },
+  build: {
+    rollupOptions: {
+      output: {
+        // Split rarely-changing vendor libs out of the entry chunk so the main
+        // bundle drops under Vite's 500 kB warning. Recharts is intentionally
+        // NOT listed — it's lazy-loaded behind the Analytics route and stays in
+        // its own async chunk; lucide-react is left tree-shaken (per-icon).
+        manualChunks: {
+          "react-vendor": ["react", "react-dom", "react-router-dom"],
+          db: ["dexie", "dexie-react-hooks"],
+          i18n: ["i18next", "react-i18next"],
+        },
+      },
+    },
+  },
 });
