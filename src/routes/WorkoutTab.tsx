@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
@@ -5,12 +6,13 @@ import { CalendarDays, Pencil, Play, Plus, Trash2, Zap } from "lucide-react";
 import { db } from "@core/db/db";
 import { createRoutine, deleteRoutine, startProgramDay, startQuickWorkout, unfinishedSession } from "@core/db/mutations";
 import { activeProgramToday, programOwnedRoutineIds } from "@core/db/queries";
-import { overviewStats } from "@core/db/analytics";
+import { currentStreak } from "@core/db/analytics";
 import { muscleRecovery } from "@core/db/recovery";
 import { MUSCLE_I18N_KEY } from "@core/models/enums";
 import { IronTopBar, IronToolbarButton } from "@ui/components/IronTopBar";
 import { IronEmptyState } from "@ui/components/IronEmptyState";
 import { IronMenu } from "@ui/components/IronMenu";
+import { IronConfirm } from "@ui/components/IronConfirm";
 import { relativeDay } from "@app/lib/format";
 
 // Fatigue-band dot color for the readiness banner.
@@ -19,6 +21,7 @@ const DOT: Record<string, string> = { avoid: "bg-bad", notRecommended: "bg-fade"
 export function WorkoutTab() {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
+  const [pendingDelete, setPendingDelete] = useState<{ id: string; name: string } | null>(null);
 
   const data = useLiveQuery(
     async () => {
@@ -27,19 +30,29 @@ export function WorkoutTab() {
         .filter((r) => !owned.has(r.id))
         .sort((a, b) => (b.lastUsed ?? b.createdAt) - (a.lastUsed ?? a.createdAt));
       const exByMuscle = new Map((await db.exercises.toArray()).map((e) => [e.id, e.muscleGroup]));
-      const routines = await Promise.all(
-        all.map(async (r) => {
-          const res = await db.routineExercises.where("routineId").equals(r.id).toArray();
-          const muscles = [...new Set(res.map((re) => exByMuscle.get(re.exerciseId)).filter((m): m is NonNullable<typeof m> => !!m))];
-          return { routine: r, exCount: res.length, muscles };
-        }),
-      );
+      // One query for every routine's exercises, grouped in memory — avoids an
+      // IndexedDB round-trip per routine (the old N+1).
+      const routineIds = all.map((r) => r.id);
+      const allRes = routineIds.length
+        ? await db.routineExercises.where("routineId").anyOf(routineIds).toArray()
+        : [];
+      const resByRoutine = new Map<string, typeof allRes>();
+      for (const re of allRes) {
+        const arr = resByRoutine.get(re.routineId) ?? [];
+        arr.push(re);
+        resByRoutine.set(re.routineId, arr);
+      }
+      const routines = all.map((r) => {
+        const res = resByRoutine.get(r.id) ?? [];
+        const muscles = [...new Set(res.map((re) => exByMuscle.get(re.exerciseId)).filter((m): m is NonNullable<typeof m> => !!m))];
+        return { routine: r, exCount: res.length, muscles };
+      });
       const today = await activeProgramToday();
-      const stats = await overviewStats();
+      const streak = await currentStreak();
       const open = await unfinishedSession();
       // muscleRecovery() is sorted fatigued-first, so the first <50% row is the worst.
       const worst = (await muscleRecovery()).find((r) => r.recoveryPercentage < 50) ?? null;
-      return { routines, today, streak: stats.streakDays, open, worst };
+      return { routines, today, streak, open, worst };
     },
     [],
     undefined,
@@ -63,9 +76,10 @@ export function WorkoutTab() {
     navigate(`/active/${id}`);
   }
 
-  async function removeRoutine(id: string, name: string) {
-    if (!window.confirm(`${t("Delete routine")} "${name}"? ${t("Past sessions are kept.")}`)) return;
-    await deleteRoutine(id);
+  async function confirmDelete() {
+    if (!pendingDelete) return;
+    await deleteRoutine(pendingDelete.id);
+    setPendingDelete(null);
   }
 
   const routines = data?.routines;
@@ -187,7 +201,7 @@ export function WorkoutTab() {
           {t("Quick start")}
         </button>
 
-        {routines === undefined ? null : routines.length === 0 ? (
+        {routines === undefined ? <RoutineListSkeleton /> : routines.length === 0 ? (
           <IronEmptyState
             eyebrow={t("ROUTINES · 00")}
             title={t("Build your\nfirst routine")}
@@ -236,7 +250,7 @@ export function WorkoutTab() {
                           label: t("Delete"),
                           icon: <Trash2 size={15} strokeWidth={2.25} />,
                           danger: true,
-                          onClick: () => void removeRoutine(r.id, r.name),
+                          onClick: () => setPendingDelete({ id: r.id, name: r.name }),
                         },
                       ]}
                     />
@@ -247,6 +261,40 @@ export function WorkoutTab() {
           </>
         )}
       </div>
+
+      <IronConfirm
+        open={!!pendingDelete}
+        title={`${t("Delete routine")}?`}
+        message={pendingDelete ? `“${pendingDelete.name}” — ${t("Past sessions are kept.")}` : undefined}
+        confirmLabel={t("Delete")}
+        cancelLabel={t("Cancel")}
+        destructive
+        onConfirm={() => void confirmDelete()}
+        onCancel={() => setPendingDelete(null)}
+      />
+    </div>
+  );
+}
+
+/** Placeholder rows shown while the routine list loads — mirrors the row layout. */
+function RoutineListSkeleton() {
+  return (
+    <div className="animate-pulse motion-reduce:animate-none" aria-hidden="true">
+      <p className="px-[22px] pb-2 pt-5">
+        <span className="block h-2.5 w-24 bg-chip" />
+      </p>
+      <ul className="divide-y divide-hairline border-y border-hairline">
+        {[0, 1, 2].map((i) => (
+          <li key={i} className="flex items-center gap-3 py-4 pl-[22px] pr-[14px]">
+            <span className="h-4 w-5 shrink-0 bg-chip" />
+            <span className="min-w-0 flex-1">
+              <span className="block h-3.5 w-1/2 bg-chip" />
+              <span className="mt-1.5 block h-2.5 w-1/3 bg-chip/60" />
+            </span>
+            <span className="h-4 w-6 shrink-0 bg-chip" />
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }

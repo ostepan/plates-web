@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { useNavigate, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
@@ -34,6 +34,22 @@ export function RoutineEditor() {
     [],
   );
 
+  // Auto-discard a routine opened via "New routine" but left untouched (default
+  // name + no exercises) so abandoned taps don't leave empty rows behind. The
+  // `armed` guard means StrictMode's mount-probe — which unmounts before the
+  // async routine load resolves — can't delete a freshly created routine.
+  const defaultName = t("New routine");
+  const discard = useRef({ armed: false, empty: true, touched: false });
+  discard.current.armed = routine !== undefined;
+  discard.current.empty = (routine?.name ?? "") === defaultName && rows.length === 0;
+  useEffect(
+    () => () => {
+      const s = discard.current;
+      if (s.armed && s.empty && !s.touched) void deleteRoutine(id);
+    },
+    [id],
+  );
+
   if (routine === undefined) return null;
 
   return (
@@ -52,6 +68,7 @@ export function RoutineEditor() {
           <p className="eyebrow text-ink3 mb-1.5">{t("NAME")}</p>
           <input
             defaultValue={routine?.name ?? ""}
+            onChange={() => { discard.current.touched = true; }}
             onBlur={(e) => void renameRoutine(id, e.target.value)}
             placeholder={t("e.g. Push Day")}
             className="display-title w-full bg-transparent text-[26px] text-ink outline-none placeholder:text-ink3"

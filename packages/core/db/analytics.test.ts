@@ -3,7 +3,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { db } from "./db";
 import { seedIfNeeded } from "./seed";
 import { addExerciseToRoutine, createRoutine, finishSession, startSessionFromRoutine, toggleSetComplete, updateSet } from "./mutations";
-import { exerciseE1RMSeries, overviewStats, prTimeline, weeklyVolumeByMuscle } from "./analytics";
+import { currentStreak, exerciseE1RMSeries, overviewStats, prTimeline, weeklyVolumeByMuscle } from "./analytics";
 import type { ID } from "../models/types";
 
 async function logBench(routineId: ID, benchId: ID, weight: number) {
@@ -57,5 +57,12 @@ describe("analytics aggregations (M3)", () => {
     const prs = await prTimeline();
     expect(prs.length).toBe(2); // both sessions set a new best
     expect(prs[0].e1rm).toBeGreaterThan(prs[1].e1rm); // newest first
+  });
+
+  it("currentStreak agrees with overviewStats but reads only sessions", async () => {
+    const streak = await currentStreak();
+    const stats = await overviewStats();
+    expect(streak).toBe(stats.streakDays); // lightweight path == full path
+    expect(streak).toBeGreaterThanOrEqual(1); // both sessions logged today
   });
 });

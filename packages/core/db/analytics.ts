@@ -103,15 +103,8 @@ export interface OverviewStats {
   streakDays: number;
 }
 
-export async function overviewStats(): Promise<OverviewStats> {
-  const sessions = await finishedSessions();
-  const { byId } = await setsBySessionExercise(sessions.map((s) => s.id));
-  let totalSets = 0;
-  for (const arr of byId.values()) totalSets += arr.filter((s) => s.isCompleted && s.kind === "working").length;
-  const totalVolume = sessions.reduce((v, s) => v + s.totalVolume, 0);
-
-  // streak = consecutive calendar days (ending today or yesterday) with a workout
-  const days = new Set(sessions.map((s) => dayStart(s.date)));
+/** Streak length from a set of day-start timestamps — consecutive days ending today or yesterday. */
+function streakFromDays(days: Set<number>): number {
   let streak = 0;
   let cursor = dayStart(Date.now());
   if (!days.has(cursor)) cursor -= DAY; // allow "yesterday" to keep a streak alive
@@ -119,8 +112,27 @@ export async function overviewStats(): Promise<OverviewStats> {
     streak++;
     cursor -= DAY;
   }
+  return streak;
+}
 
-  return { workouts: sessions.length, totalVolume, totalSets, streakDays: streak };
+/**
+ * Current workout streak (consecutive calendar days with a finished session).
+ * Reads only session rows — cheap enough for the Workout tab, unlike
+ * `overviewStats`, which also scans every set just to total volume/sets.
+ */
+export async function currentStreak(): Promise<number> {
+  const sessions = await db.sessions.where("durationSeconds").above(0).toArray();
+  return streakFromDays(new Set(sessions.map((s) => dayStart(s.date))));
+}
+
+export async function overviewStats(): Promise<OverviewStats> {
+  const sessions = await finishedSessions();
+  const { byId } = await setsBySessionExercise(sessions.map((s) => s.id));
+  let totalSets = 0;
+  for (const arr of byId.values()) totalSets += arr.filter((s) => s.isCompleted && s.kind === "working").length;
+  const totalVolume = sessions.reduce((v, s) => v + s.totalVolume, 0);
+  const streakDays = streakFromDays(new Set(sessions.map((s) => dayStart(s.date))));
+  return { workouts: sessions.length, totalVolume, totalSets, streakDays };
 }
 
 /** Per-day workout counts for a heatmap, oldest→newest, covering `weeks`. */
