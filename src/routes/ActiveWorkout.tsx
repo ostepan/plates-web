@@ -15,6 +15,7 @@ import type { SetKind } from "@core/models/enums";
 import { MUSCLE_I18N_KEY } from "@core/models/enums";
 import type { RecoveryVerdict } from "@core/calc/recovery";
 import { OneRM } from "@core/calc/oneRM";
+import { suggestNextSet } from "@core/calc/progression";
 import { STANDARD_KG_PLATES, STANDARD_LB_PLATES, plates } from "@core/calc/plate";
 import { isInSuperset, supersetBadge } from "@core/superset";
 import { formatDuration, localizedExerciseName, weightUnit } from "@app/lib/format";
@@ -29,7 +30,7 @@ interface Block {
   ghost: WorkoutSet[];
   restSeconds: number;
   pr?: number;
-  target?: { sets: number; min: number; max: number };
+  target?: { sets: number; min: number; max: number; rir?: number; weight?: number };
   supersetGroupId?: string;
 }
 
@@ -108,7 +109,9 @@ export function ActiveWorkout() {
             sxId: sx.id, exercise, sets, ghost,
             restSeconds: exercise?.defaultRestSeconds ?? 120,
             pr: sx.exerciseId ? prMap.get(sx.exerciseId) : undefined,
-            target: re ? { sets: re.targetSets, min: re.targetRepsMin, max: re.targetRepsMax } : undefined,
+            target: re
+              ? { sets: re.targetSets, min: re.targetRepsMin, max: re.targetRepsMax, rir: re.targetRIR, weight: re.targetWeight }
+              : undefined,
             supersetGroupId: sx.supersetGroupID,
           };
         }),
@@ -342,6 +345,10 @@ export function ActiveWorkout() {
                         index={i}
                         ghost={b.ghost[i]}
                         unit={unit}
+                        repMin={b.target?.min}
+                        repMax={b.target?.max}
+                        targetRIR={b.target?.rir}
+                        fallbackWeight={b.target?.weight}
                         onClose={() => setEditingSetId(null)}
                         onLogged={() => { setEditingSetId(null); startRest(b.restSeconds); }}
                       />
@@ -551,12 +558,16 @@ function PendingRow({
 
 /** Dark inline editor — steppers + editable fields + plate stack + Log. */
 function SetEditor({
-  set, index, ghost, unit, onClose, onLogged,
+  set, index, ghost, unit, repMin, repMax, targetRIR, fallbackWeight, onClose, onLogged,
 }: {
   set: WorkoutSet;
   index: number;
   ghost?: WorkoutSet;
   unit: "kg" | "lb";
+  repMin?: number;
+  repMax?: number;
+  targetRIR?: number;
+  fallbackWeight?: number;
   onClose: () => void;
   onLogged: () => void;
 }) {
@@ -568,6 +579,21 @@ function SetEditor({
   const [kind, setKind] = useState<SetKind>(set.kind);
   const wStep = unit === "kg" ? 2.5 : 5;
   const wasDone = set.isCompleted;
+
+  // Smart-autotype suggestion (working sets only): the next progressive-overload
+  // target derived from this set position's ghost. Shown as a one-tap chip when
+  // it differs from the current field values.
+  const suggestion =
+    kind === "working"
+      ? suggestNextSet({
+          last: ghost ? { weight: ghost.weight, reps: ghost.reps, rir: ghost.rir } : undefined,
+          repMin, repMax, targetRIR, increment: wStep, fallbackWeight,
+        })
+      : undefined;
+  const showSuggestion = !!suggestion && (suggestion.weight !== weight || suggestion.reps !== reps);
+  const reasonLabel: Record<NonNullable<typeof suggestion>["reason"], string> = {
+    progress: t("heavier"), addRep: t("+1 rep"), hold: t("match"),
+  };
 
   async function commit() {
     await updateSet(set.id, { weight, reps, rir, kind, isCompleted: true });
@@ -602,6 +628,21 @@ function SetEditor({
           <button type="button" onClick={onClose} className="eyebrow text-[11px] text-white/55">{t("Cancel")}</button>
         </div>
       </div>
+
+      {showSuggestion && suggestion && (
+        <button
+          type="button"
+          onClick={() => { setWeight(suggestion.weight); setReps(suggestion.reps); setRir(suggestion.rir); }}
+          className="mb-3 flex w-full items-center gap-2 border border-accent bg-accent/10 px-2.5 py-1.5 text-left active:bg-accent/20"
+        >
+          <Lightbulb size={13} strokeWidth={2.5} className="shrink-0 text-accent" />
+          <span className="eyebrow text-[9px] text-white/55">{t("Suggested")}</span>
+          <span className="mono-num text-[14px] font-extrabold text-accent">
+            {suggestion.weight} × {suggestion.reps}
+          </span>
+          <span className="eyebrow ml-auto text-[9px] text-accent">{reasonLabel[suggestion.reason]}</span>
+        </button>
+      )}
 
       <div className="grid grid-cols-3 gap-3">
         {fields.map((f) => (
