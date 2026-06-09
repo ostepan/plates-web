@@ -274,7 +274,7 @@ export function ActiveWorkout() {
                     key={s.id}
                     set={s}
                     index={i}
-                    ghost={b.ghost[i]}
+                    ghost={b.ghost[i] ?? b.ghost.at(-1)}
                     active={s.id === activeSetId}
                     onComplete={(done) => done && rest.start(b.restSeconds)}
                   />
@@ -410,8 +410,14 @@ function SetRow({
 }) {
   const { t } = useTranslation();
   const unit = weightUnit();
-  const [weight, setWeight] = useState(set.weight ? String(set.weight) : "");
-  const [reps, setReps] = useState(set.reps ? String(set.reps) : "");
+  // Smart autotype: pre-fill from the last session's matching set so a pending
+  // row is loggable with a single tap; persisted on blur/complete as before.
+  const [weight, setWeight] = useState(
+    set.weight ? String(set.weight) : ghost?.weight ? String(ghost.weight) : "",
+  );
+  const [reps, setReps] = useState(
+    set.reps ? String(set.reps) : ghost?.reps ? String(ghost.reps) : "",
+  );
   const [rir, setRir] = useState(set.rir != null ? String(set.rir) : "");
   const [menu, setMenu] = useState(false);
 
