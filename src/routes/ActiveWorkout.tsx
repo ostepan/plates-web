@@ -2,27 +2,21 @@ import { useEffect, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { useNavigate, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { ArrowDown, ArrowUp, Check, ChevronDown, Lightbulb, Link, Minus, Plus, Timer, Trash2, Unlink, X } from "lucide-react";
+import { ArrowUp, Check, Lightbulb } from "lucide-react";
 import { db } from "@core/db/db";
 import {
-  addExerciseToSession, addSet, deleteSessionExercise, deleteSet, discardSession, finishSession,
-  groupSessionExerciseWithPrevious, lastCompletedSets, ungroupSessionExercise, updateSet,
+  addSet, discardSession, finishSession, toggleSetComplete, updateSet,
 } from "@core/db/mutations";
-import { bestE1RMByExercise } from "@core/db/queries";
+import { bestE1RMByExercise, lastWorkingSetsByExercise } from "@core/db/analytics";
 import { getRecoverySettings, muscleRecovery } from "@core/db/recovery";
 import { Recovery } from "@core/calc/recovery";
 import type { Exercise, ID, WorkoutSet } from "@core/models/types";
-import type { SetKind } from "@core/models/enums";
+import type { MuscleGroup, SetKind } from "@core/models/enums";
 import { MUSCLE_I18N_KEY } from "@core/models/enums";
-import type { RecoveryVerdict } from "@core/calc/recovery";
-import { OneRM } from "@core/calc/oneRM";
-import { suggestNextSet } from "@core/calc/progression";
 import { STANDARD_KG_PLATES, STANDARD_LB_PLATES, plates } from "@core/calc/plate";
-import { isInSuperset, supersetBadge } from "@core/superset";
+import { supersetBadge } from "@core/superset";
 import { formatDuration, localizedExerciseName, weightUnit } from "@app/lib/format";
 import { useRestTimer } from "@app/hooks/useRestTimer";
-import { ExercisePicker } from "@app/components/ExercisePicker";
-import { SwipeRow } from "@app/components/SwipeRow";
 
 interface Block {
   sxId: ID;
@@ -30,69 +24,43 @@ interface Block {
   sets: WorkoutSet[];
   ghost: WorkoutSet[];
   restSeconds: number;
+  target?: { sets: number; min: number; max: number; weight?: number };
   pr?: number;
-  target?: { sets: number; min: number; max: number; rir?: number; weight?: number };
+  recovery?: { code: string; pct: number };
   supersetGroupId?: string;
 }
 
-const SET_KINDS: SetKind[] = ["working", "warmup", "dropset", "amrap", "restPause", "myoReps"];
-const KIND_ABBR: Record<SetKind, string> = {
-  working: "", warmup: "W", dropset: "D", amrap: "A", restPause: "RP", myoReps: "M",
-};
-const KIND_LABEL: Record<SetKind, string> = {
-  working: "Working", warmup: "Warm-up", dropset: "Drop set", amrap: "AMRAP", restPause: "Rest-pause", myoReps: "Myo-reps",
+/** 3-letter muscle code shown in the exercise sub-line (CHE, SHO, …). */
+const MUSCLE_CODE: Record<MuscleGroup, string> = {
+  chest: "CHE", back: "BAC", shoulders: "SHO", biceps: "BIC", triceps: "TRI",
+  forearms: "FOR", legs: "LEG", glutes: "GLU", calves: "CAL", abs: "ABS",
+  cardio: "CAR", fullBody: "FUL",
 };
 
-/** RIR text color → matches the Iron RIRStyle scale (0 redlined → 4 fresh). */
-function rirColorClass(rir: number | undefined): string {
-  if (rir == null || Number.isNaN(rir)) return "text-ink3";
-  if (rir <= 0) return "text-bad";
-  if (rir === 1) return "text-fade";
-  if (rir === 2) return "text-warn";
-  if (rir === 3) return "text-ok/80";
-  return "text-ok";
+/** Compact volume — 5739 → "5.7k". */
+function compactVolume(n: number): string {
+  if (n < 1000) return String(Math.round(n));
+  const k = n / 1000;
+  return `${k >= 10 ? Math.round(k) : k.toFixed(1).replace(/\.0$/, "")}k`;
 }
-/** Same scale as hex, for use on the dark set editor. */
-const RIR_HEX = ["#C64D2A", "#D97E3E", "#D4A544", "#9BA85A", "#3FA055"];
-const rirHex = (r: number | undefined) =>
-  r == null ? "#FFFFFF" : RIR_HEX[Math.min(4, Math.max(0, Math.floor(r)))];
-
-const RECOVERY_TEXT: Record<RecoveryVerdict, string> = {
-  ready: "text-ok", acceptable: "text-info", caution: "text-warn", notRecommended: "text-fade", avoid: "text-bad",
-};
 
 export function ActiveWorkout() {
   const { sessionId = "" } = useParams();
   const navigate = useNavigate();
   const { t, i18n } = useTranslation();
   const rest = useRestTimer();
-  const [restTotal, setRestTotal] = useState(0);
-  const unit = weightUnit();
-
   const [openCues, setOpenCues] = useState<Set<ID>>(() => new Set());
-  const [collapsedEx, setCollapsedEx] = useState<Set<ID>>(() => new Set());
-  const [editingSetId, setEditingSetId] = useState<ID | null>(null);
-  const [picking, setPicking] = useState(false);
-  // Which exercise row has a swipe-action panel open, and on which side.
-  const [swipe, setSwipe] = useState<{ id: ID; side: "left" | "right" } | null>(null);
-
-  const toggle = (set: Set<ID>, id: ID) => {
-    const next = new Set(set);
-    next.has(id) ? next.delete(id) : next.add(id);
-    return next;
-  };
+  const toggleCues = (sxId: ID) =>
+    setOpenCues((prev) => {
+      const next = new Set(prev);
+      next.has(sxId) ? next.delete(sxId) : next.add(sxId);
+      return next;
+    });
 
   const session = useLiveQuery(() => db.sessions.get(sessionId), [sessionId]);
-  const recData = useLiveQuery(
-    async () => ({ rows: await muscleRecovery(), settings: await getRecoverySettings() }),
-    [],
-    undefined,
-  );
-  const recovery = recData?.rows ?? [];
-  // Fatigue gates: below `capLine` the set-cap warning arms; below `holdLine`
-  // the smart-autotype suggestion stops proposing load/rep advances.
-  const capLine = recData?.settings.mostlyRecoveredThreshold ?? 70;
-  const holdLine = recData?.settings.partiallyRecoveredThreshold ?? 50;
+  // Below this recovery %, the volume-cap warning arms for a muscle's blocks.
+  const capLine =
+    useLiveQuery(() => getRecoverySettings(), [])?.mostlyRecoveredThreshold ?? 70;
   const blocks = useLiveQuery(
     async (): Promise<Block[]> => {
       const sess = await db.sessions.get(sessionId);
@@ -100,12 +68,12 @@ export function ActiveWorkout() {
         ? await db.routineExercises.where("routineId").equals(sess.routineId).toArray()
         : [];
       const targetByEx = new Map(res.map((r) => [r.exerciseId, r]));
+      const recovery = await muscleRecovery();
+      const recByMuscle = new Map(recovery.map((r) => [r.muscleGroup, r.recoveryPercentage]));
+      const prByExercise = await bestE1RMByExercise();
+      const lastByExercise = await lastWorkingSetsByExercise(sessionId);
       const sxs = (await db.sessionExercises.where("sessionId").equals(sessionId).toArray()).sort(
         (a, b) => a.order - b.order,
-      );
-      const prMap = await bestE1RMByExercise(
-        sxs.map((sx) => sx.exerciseId).filter((x): x is ID => !!x),
-        sessionId,
       );
       return Promise.all(
         sxs.map(async (sx) => {
@@ -113,15 +81,20 @@ export function ActiveWorkout() {
           const sets = (await db.workoutSets.where("sessionExerciseId").equals(sx.id).toArray()).sort(
             (a, b) => a.order - b.order,
           );
-          const ghost = sx.exerciseId ? await lastCompletedSets(sx.exerciseId, sessionId) : [];
+          const ghost = sx.exerciseId ? lastByExercise.get(sx.exerciseId) ?? [] : [];
           const re = sx.exerciseId ? targetByEx.get(sx.exerciseId) : undefined;
+          const prRaw = sx.exerciseId ? prByExercise.get(sx.exerciseId) : undefined;
+          const pr = prRaw ? Math.round(prRaw) : undefined;
+          const pct = exercise ? recByMuscle.get(exercise.muscleGroup) : undefined;
           return {
             sxId: sx.id, exercise, sets, ghost,
             restSeconds: exercise?.defaultRestSeconds ?? 120,
-            pr: sx.exerciseId ? prMap.get(sx.exerciseId) : undefined,
             target: re
-              ? { sets: re.targetSets, min: re.targetRepsMin, max: re.targetRepsMax, rir: re.targetRIR, weight: re.targetWeight }
+              ? { sets: re.targetSets, min: re.targetRepsMin, max: re.targetRepsMax, weight: re.targetWeight }
               : undefined,
+            pr,
+            recovery:
+              exercise && pct != null ? { code: MUSCLE_CODE[exercise.muscleGroup], pct: Math.round(pct) } : undefined,
             supersetGroupId: sx.supersetGroupID,
           };
         }),
@@ -130,8 +103,6 @@ export function ActiveWorkout() {
     [sessionId],
     [] as Block[],
   );
-
-  const recByMuscle = new Map(recovery.map((r) => [r.muscleGroup, r]));
 
   const [elapsed, setElapsed] = useState(0);
   useEffect(() => {
@@ -155,12 +126,8 @@ export function ActiveWorkout() {
     0,
   );
   const firstIncomplete = blocks.findIndex((b) => b.sets.some((s) => !s.isCompleted));
-  const currentIdx = firstIncomplete === -1 ? blocks.length - 1 : firstIncomplete;
+  const currentIndex = firstIncomplete; // -1 if all done
   const currentExercise = firstIncomplete === -1 ? blocks.length : firstIncomplete + 1;
-  const nextBlock = blocks[currentIdx + 1];
-  const volLabel = volume >= 1000 ? `${(volume / 1000).toFixed(1)}k` : String(Math.round(volume));
-  // Superset run membership/badges depend on the ordered group keys across all blocks.
-  const groupItems = blocks.map((x) => ({ supersetGroupId: x.supersetGroupId }));
 
   async function finish() {
     await finishSession(sessionId);
@@ -171,587 +138,231 @@ export function ActiveWorkout() {
     await discardSession(sessionId);
     navigate("/workout", { replace: true });
   }
-  function startRest(seconds: number) {
-    setRestTotal(seconds);
-    rest.start(seconds);
-  }
 
   return (
     <div className="flex h-[100dvh] flex-col bg-bg">
-      {/* Sticky header */}
-      <header className="border-b border-rule px-[22px] pt-[max(0.5rem,env(safe-area-inset-top))] pb-2.5">
-        <div className="flex items-center justify-between">
-          <button
-            type="button"
-            onClick={() => void discard()}
-            aria-label={t("Discard workout")}
-            className="grid h-10 w-10 place-items-center bg-ink text-white"
-          >
-            <X size={18} strokeWidth={2.5} />
-          </button>
-          <button type="button" onClick={() => void finish()} className="bg-accent px-5 py-2.5 text-white">
-            <span className="eyebrow text-[12px]">{t("FINISH")}</span>
-          </button>
-        </div>
-        <div className="mt-2.5 flex items-end justify-between">
+      {/* Sticky header + stats */}
+      <header className="sticky top-0 z-10 bg-bg">
+        <div className="flex items-end justify-between px-[22px] pb-3.5 pt-[max(0.75rem,env(safe-area-inset-top))]">
           <div>
-            <p className="eyebrow flex items-center gap-1.5 text-accent">
-              <span className="h-1.5 w-1.5 rounded-full bg-accent" />
-              {t("LIVE")}
-            </p>
-            <h1 className="display-title text-[24px] text-ink">{session.routineNameSnapshot || t("Workout")}</h1>
+            <div className="flex items-center gap-1.5">
+              <span className="h-[7px] w-[7px] bg-accent" />
+              <span className="font-display text-[10px] font-bold uppercase tracking-[0.14em] text-accent">
+                {t("LIVE")}
+              </span>
+            </div>
+            <h1 className="mt-1 font-display text-[22px] font-extrabold tracking-[-0.5px] text-ink">
+              {session.routineNameSnapshot || t("Workout")}
+            </h1>
           </div>
           <div className="text-right">
-            <p className="mono-num text-[24px] font-bold text-ink">{formatDuration(elapsed)}</p>
-            <p className="eyebrow text-[9px] text-ink3">{t("ELAPSED")}</p>
+            <p className="font-display text-[22px] font-semibold tracking-[-0.5px] tabular-nums text-ink">
+              {formatDuration(elapsed)}
+            </p>
+            <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-ink3">{t("ELAPSED")}</p>
           </div>
+        </div>
+        <div className="grid grid-cols-3">
+          <GridStat label={t("SETS")} value={`${completed}/${totalSets}`} />
+          <GridStat label={t("VOLUME")} value={compactVolume(volume)} />
+          <GridStat label={t("EXERCISE")} value={`${currentExercise}/${blocks.length}`} />
         </div>
       </header>
 
-      <div className="grid grid-cols-3 border-b border-rule">
-        <GridStat label={t("SETS")} value={`${completed}/${totalSets}`} />
-        <GridStat label={t("VOLUME")} value={volLabel} />
-        <GridStat label={t("EXERCISE")} value={`${currentExercise}/${blocks.length}`} last />
-      </div>
-
-      <div
-        className="min-h-0 flex-1 overflow-y-auto pb-40"
-        onScroll={() => { if (swipe) setSwipe(null); }}
-      >
+      {/* Exercise list */}
+      <div className="min-h-0 flex-1 overflow-y-auto">
         {blocks.map((b, bi) => {
-          const exDone = b.sets.length > 0 && b.sets.every((s) => s.isCompleted);
-          const isCurrent = bi === currentIdx && !exDone;
-          const isFuture = bi > currentIdx;
-          // Done exercises start collapsed; tapping the header opens them.
-          const showCollapsed = exDone && !collapsedEx.has(`open:${b.sxId}` as ID);
+          const isCurrent = bi === currentIndex;
           const activeSetId = isCurrent ? b.sets.find((s) => !s.isCompleted)?.id : undefined;
-          const rec = b.exercise ? recByMuscle.get(b.exercise.muscleGroup) : undefined;
+          const badge = supersetBadge(blocks.map((x) => ({ supersetGroupId: x.supersetGroupId })), bi);
           // Volume-cap guard: sets a fatigued muscle can absorb vs the plan.
           const workingDone = b.sets.filter((s) => s.isCompleted && s.kind === "working").length;
           const plannedSets = b.target?.sets ?? b.sets.filter((s) => s.kind === "working").length;
           const setCap =
-            rec && rec.recoveryPercentage < capLine
-              ? Recovery.recommendedSetCap(plannedSets, rec.recoveryPercentage, capLine)
+            b.recovery && b.recovery.pct < capLine
+              ? Recovery.recommendedSetCap(plannedSets, b.recovery.pct, capLine)
               : null;
-          const showCapWarning = setCap != null && !exDone && workingDone >= setCap;
-          const holdProgress = !!rec && rec.recoveryPercentage < holdLine;
-          const top = b.sets.length ? Math.max(...b.sets.map((s) => s.weight)) : 0;
-          const blockVol = b.sets.reduce((v, s) => v + s.weight * s.reps, 0);
-          const badge = supersetBadge(groupItems, bi);
-          const grouped = isInSuperset(groupItems, bi);
-          const editingInBlock = b.sets.some((s) => s.id === editingSetId);
-          // Swipe right reveals the superset link (or unlink); swipe left reveals delete.
-          const leftAction = grouped
-            ? { icon: <Unlink size={18} strokeWidth={2.25} />, label: t("Ungroup"), bg: "bg-ink",
-                onAction: () => void ungroupSessionExercise(b.sxId) }
-            : bi > 0
-              ? { icon: <Link size={18} strokeWidth={2.25} />, label: t("Superset"), bg: "bg-accent",
-                  onAction: () => void groupSessionExerciseWithPrevious(b.sxId) }
-              : undefined;
-          const rightAction = {
-            icon: <Trash2 size={18} strokeWidth={2.25} />, label: t("Delete"), bg: "bg-bad",
-            onAction: () => { if (confirm(`${t("Delete exercise")}?`)) void deleteSessionExercise(b.sxId); },
-          };
-
+          const showCapWarning =
+            setCap != null && workingDone >= setCap && b.sets.some((s) => !s.isCompleted);
           return (
-            <section key={b.sxId} className="border-b border-rule">
-              <SwipeRow
-                left={leftAction}
-                right={rightAction}
-                disabled={editingInBlock}
-                open={swipe?.id === b.sxId ? swipe.side : null}
-                onOpenChange={(side) => setSwipe(side ? { id: b.sxId, side } : null)}
-              >
-              {/* Header */}
-              <button
-                type="button"
-                disabled={!exDone}
-                onClick={() => exDone && setCollapsedEx((s) => toggle(s, `open:${b.sxId}` as ID))}
-                className={`w-full px-[22px] pt-4 pb-1.5 text-left ${isCurrent ? "bg-accentSoft" : ""} ${
-                  exDone ? "cursor-pointer" : "cursor-default"
-                }`}
-              >
-                <div className="flex items-baseline justify-between gap-2">
-                  <div className="flex min-w-0 items-baseline gap-2.5">
-                    <span className="mono-num text-[13px] font-bold text-ink3">{String(bi + 1).padStart(2, "0")}</span>
-                    {badge && (
-                      <span className="mono-num self-center border border-accent px-1 text-[10px] font-bold text-accent">{badge.label}</span>
-                    )}
-                    <span className={`font-display text-[19px] font-extrabold leading-tight ${isFuture ? "text-ink2" : "text-ink"}`}>
+            <section key={b.sxId}>
+              {/* Exercise header bar — peach when current */}
+              <div className={`px-[22px] pb-2 pt-[18px] ${isCurrent ? "bg-accentSoft" : "bg-bg"}`}>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <span className="font-display text-[14px] font-extrabold text-ink3">{String(bi + 1).padStart(2, "0")}</span>
+                    {badge ? (
+                      <span className="mono-num border border-accent px-1 text-[10px] font-bold text-accent">{badge.label}</span>
+                    ) : null}
+                    <span className="font-display text-[20px] font-extrabold tracking-[-0.4px] leading-[22px] text-ink">
                       {b.exercise ? localizedExerciseName(b.exercise, i18n.language) : "—"}
                     </span>
                     {b.exercise?.userNotes ? (
-                      <span
-                        role="button"
-                        tabIndex={0}
+                      <button
+                        type="button"
+                        onClick={() => toggleCues(b.sxId)}
                         aria-label={t("Form cues")}
-                        onClick={(e) => { e.stopPropagation(); setOpenCues((s) => toggle(s, b.sxId)); }}
-                        className={`self-center ${openCues.has(b.sxId) ? "text-fade" : "text-ink3"}`}
+                        aria-expanded={openCues.has(b.sxId)}
+                        className="text-warn"
                       >
-                        <Lightbulb size={14} strokeWidth={2.25} />
-                      </span>
+                        <Lightbulb size={14} strokeWidth={2} />
+                      </button>
                     ) : null}
                   </div>
-                  {exDone ? (
-                    <span className="eyebrow flex shrink-0 items-center gap-1 text-ok">
-                      <Check size={12} strokeWidth={3} /> {t("DONE")}
-                      <ChevronDown
-                        size={13}
-                        strokeWidth={2.5}
-                        className={`text-ink3 transition-transform ${showCollapsed ? "" : "rotate-180"}`}
-                      />
-                    </span>
-                  ) : isCurrent ? (
-                    <span className="eyebrow shrink-0 text-accent">● {t("NOW")}</span>
-                  ) : (
-                    <span className="eyebrow shrink-0 text-ink3">{t("UP NEXT")}</span>
-                  )}
+                  <span
+                    className={`flex items-center gap-1 whitespace-nowrap text-[10px] font-bold uppercase tracking-[0.12em] ${
+                      isCurrent ? "text-accent" : "text-ink3"
+                    }`}
+                  >
+                    {isCurrent ? "● " : ""}{isCurrent ? t("Now") : t("Up next")}
+                  </span>
                 </div>
-                <div className="mt-1.5 ml-[26px] flex items-center gap-3.5 text-[11px] text-ink2">
-                  {b.target && (
-                    <span>
-                      <span className="eyebrow mr-1 text-[9px] text-ink3">{t("TGT")}</span>
-                      <b className="font-display text-ink">
-                        {b.target.sets}×{b.target.min}{b.target.min !== b.target.max ? `–${b.target.max}` : ""}
+
+                {/* Tgt / PR / recovery sub-line */}
+                <div className="ml-7 mt-1.5 flex items-center gap-4 text-[11px]">
+                  {b.target ? (
+                    <span className="text-ink2">
+                      <span className="mr-1.5 text-[9px] font-bold uppercase tracking-[0.08em] text-ink3">{t("Tgt")}</span>
+                      <b className="font-display text-[11px] font-bold text-ink">
+                        {b.target.weight ? `${b.target.weight}×${b.target.min}` : `${b.target.sets}×${b.target.min}`}
                       </b>
                     </span>
-                  )}
-                  {b.pr ? (
-                    <span>
-                      <span className="eyebrow mr-1 text-[9px] text-ink3">{t("PR")}</span>
-                      <b className="font-display text-ink">{Math.round(b.pr)}</b>
+                  ) : null}
+                  {b.pr != null ? (
+                    <span className="text-ink2">
+                      <span className="mr-1.5 text-[9px] font-bold uppercase tracking-[0.08em] text-ink3">{t("PR")}</span>
+                      <b className="font-display text-[11px] font-bold text-ink">{b.pr}</b>
                     </span>
                   ) : null}
-                  {rec && (
-                    <span className={`mono-num ml-auto font-bold ${RECOVERY_TEXT[rec.verdict]}`}>
-                      {t(MUSCLE_I18N_KEY[rec.muscleGroup]).slice(0, 3).toUpperCase()} {Math.round(rec.recoveryPercentage)}%
+                  {b.recovery ? (
+                    <span className={`ml-auto text-[10px] font-bold ${recoveryColor(b.recovery.pct)}`}>
+                      {b.recovery.code} {b.recovery.pct}%
                     </span>
-                  )}
+                  ) : null}
                 </div>
-              </button>
+              </div>
 
               {b.exercise?.userNotes && openCues.has(b.sxId) ? (
-                <p className="mx-[22px] mt-2.5 border border-fade bg-card px-3 py-2 text-[13px] leading-relaxed text-ink2 whitespace-pre-line">
-                  <b className="text-ink">{t("Form cue")}.</b> {b.exercise.userNotes}
+                <p className="mx-[22px] mb-2 border-l-2 border-warn bg-warn/10 px-2.5 py-1.5 text-[13px] leading-relaxed text-ink2 whitespace-pre-line">
+                  {b.exercise.userNotes}
                 </p>
               ) : null}
 
               {/* Volume-cap warning for fatigued muscles (iOS parity) */}
-              {showCapWarning && b.exercise && (
-                <p className="mx-[22px] mt-2.5 border border-warn bg-warn/10 px-3 py-2 text-[12px] leading-relaxed text-ink">
+              {showCapWarning && b.exercise ? (
+                <p className="mx-[22px] mb-2 border-l-2 border-warn bg-warn/10 px-2.5 py-1.5 text-[12px] leading-relaxed text-ink">
                   {t("{{muscle}} is at {{pct}}% — consider stopping at {{cap}} working sets today.", {
                     muscle: t(MUSCLE_I18N_KEY[b.exercise.muscleGroup]),
-                    pct: Math.round(rec!.recoveryPercentage),
+                    pct: b.recovery!.pct,
                     cap: setCap,
                   })}
                 </p>
-              )}
+              ) : null}
 
-              {showCollapsed ? (
+              {/* Sets */}
+              <div className="px-[22px] pb-3.5">
+                <div className="grid grid-cols-[30px_61px_61px_64px_70px_30px] gap-1.5 py-1.5">
+                  <span className="text-[9px] font-bold uppercase tracking-[0.12em] text-ink3">{t("SET")}</span>
+                  <span className="text-[9px] font-bold uppercase tracking-[0.12em] text-ink3">{t("Wt")}</span>
+                  <span className="text-[9px] font-bold uppercase tracking-[0.12em] text-ink3">{t("Reps")}</span>
+                  <span className="text-[9px] font-bold uppercase tracking-[0.12em] text-ink3">{t("RIR")}</span>
+                  <span className="text-right text-[9px] font-bold uppercase tracking-[0.12em] text-ink3">{t("Last")}</span>
+                  <span />
+                </div>
+                {b.sets.map((s, i) => (
+                  <SetRow
+                    key={s.id}
+                    set={s}
+                    index={i}
+                    ghost={b.ghost[i]}
+                    active={s.id === activeSetId}
+                    onComplete={(done) => done && rest.start(b.restSeconds)}
+                  />
+                ))}
                 <button
                   type="button"
-                  onClick={() => setCollapsedEx((s) => toggle(s, `open:${b.sxId}` as ID))}
-                  className="flex w-full items-center gap-4 px-[22px] pb-4 pt-1 pl-[48px] text-left text-[11px] text-ink2"
+                  onClick={() => void addSet(b.sxId)}
+                  className="mt-2.5 w-full py-[9px] text-center font-display text-[11px] font-bold uppercase tracking-[0.09em] text-ink2 active:text-ink"
                 >
-                  <span>{t("Top")} <b className="font-display text-ink">{top} × {b.sets.at(-1)?.reps ?? 0}</b></span>
-                  <span>{t("Vol")} <b className="font-display text-ink">{blockVol >= 1000 ? `${(blockVol / 1000).toFixed(1)}k` : Math.round(blockVol)}</b></span>
-                  <span className="eyebrow ml-auto text-[9px] text-ink3">{t("Tap to revise")} ↓</span>
+                  {t("+ Add set")}
                 </button>
-              ) : (
-                <div className="px-[22px] pb-3">
-                  <div className="grid grid-cols-[1.9rem_1fr_1fr_3rem_3.6rem_1.9rem] items-center gap-1.5 border-b border-hairline py-1.5">
-                    <span className="eyebrow text-[9px] text-ink3">{t("SET")}</span>
-                    <span className="eyebrow text-[9px] text-ink3">{unit.toUpperCase()}</span>
-                    <span className="eyebrow text-[9px] text-ink3">{t("REPS")}</span>
-                    <span className="eyebrow text-[9px] text-ink3">{t("RIR")}</span>
-                    <span className="eyebrow text-right text-[9px] text-ink3">{t("LAST")}</span>
-                    <span />
-                  </div>
-                  {b.sets.map((s, i) =>
-                    editingSetId === s.id ? (
-                      <SetEditor
-                        key={s.id}
-                        set={s}
-                        index={i}
-                        ghost={b.ghost[i]}
-                        unit={unit}
-                        repMin={b.target?.min}
-                        repMax={b.target?.max}
-                        targetRIR={b.target?.rir}
-                        fallbackWeight={b.target?.weight}
-                        holdProgress={holdProgress}
-                        onClose={() => setEditingSetId(null)}
-                        onLogged={() => { setEditingSetId(null); startRest(b.restSeconds); }}
-                      />
-                    ) : s.isCompleted ? (
-                      <DoneRow
-                        key={s.id}
-                        set={s}
-                        index={i}
-                        ghost={b.ghost[i]}
-                        onTap={() => setEditingSetId(s.id)}
-                      />
-                    ) : (
-                      <PendingRow
-                        key={s.id}
-                        set={s}
-                        index={i}
-                        ghost={b.ghost[i]}
-                        active={s.id === activeSetId}
-                        onTap={() => setEditingSetId(s.id)}
-                      />
-                    ),
-                  )}
-                  <div className="mt-2 flex items-center justify-end gap-2">
-                    <button
-                      type="button"
-                      onClick={() => startRest(b.restSeconds)}
-                      aria-label={t("Rest timer")}
-                      className="flex h-8 items-center gap-1.5 border border-rule px-2.5 text-ink2 active:bg-chip"
-                    >
-                      <Timer size={14} strokeWidth={2.25} />
-                      <span className="mono-num text-[11px]">{formatDuration(b.restSeconds)}</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => void addSet(b.sxId)}
-                      aria-label={t("Add set")}
-                      className="grid h-8 w-8 place-items-center border border-dashed border-rule text-ink2 active:bg-chip"
-                    >
-                      <Plus size={16} strokeWidth={2.5} />
-                    </button>
-                  </div>
-                </div>
-              )}
-              </SwipeRow>
+              </div>
             </section>
           );
         })}
 
-        {/* Add exercise mid-workout */}
-        <div className="px-[22px] pt-4">
-          <button
-            type="button"
-            onClick={() => setPicking(true)}
-            className="flex w-full items-center justify-center gap-1.5 border border-dashed border-rule py-3 text-[11px] font-bold uppercase tracking-eyebrow text-ink2 active:bg-chip"
-          >
-            <Plus size={14} strokeWidth={2.75} />
-            {t("Add exercise")}
-          </button>
-        </div>
-
-        <div className="px-[22px] pt-3 pb-5">
+        {/* Finish */}
+        <div className="px-[22px] pb-[max(3.75rem,env(safe-area-inset-bottom))] pt-5">
           <button
             type="button"
             onClick={() => void finish()}
-            className="flex w-full items-center justify-center gap-2.5 bg-ink py-4 text-white"
+            className="flex h-[54px] w-full items-center justify-center gap-2 bg-ink text-white"
           >
-            <span className="eyebrow text-[13px]">{t("FINISH WORKOUT")}</span>
+            <span className="font-display text-[14px] font-extrabold uppercase tracking-[0.14em]">{t("Finish workout")}</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => void discard()}
+            className="mt-3 w-full text-center text-[10px] font-bold uppercase tracking-[0.12em] text-ink3 active:text-ink"
+          >
+            {t("Discard workout")}
           </button>
         </div>
       </div>
-
-      {picking && (
-        <ExercisePicker
-          onPick={(exerciseId) => {
-            void addExerciseToSession(sessionId, exerciseId);
-            setPicking(false);
-          }}
-          onClose={() => setPicking(false)}
-        />
-      )}
 
       {rest.running && (
-        <div className="absolute inset-x-0 bottom-0 z-30 flex items-center gap-3 border-t-2 border-accent bg-ink px-[18px] py-3 text-white pb-[max(0.75rem,env(safe-area-inset-bottom))]">
-          <div className="shrink-0">
-            <p className="eyebrow text-accent">{t("REST")}</p>
-            <p className="mono-num text-[22px] font-bold leading-none">{formatDuration(rest.remaining)}</p>
+        <div className="absolute inset-x-0 bottom-0 flex items-center justify-between border-t border-rule bg-ink px-5 py-3 text-white pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+          <span className="eyebrow text-[11px] text-white/60">{t("REST")}</span>
+          <span className="mono-num text-[22px] font-bold">{formatDuration(rest.remaining)}</span>
+          <div className="flex items-center gap-2">
+            <button type="button" onClick={() => rest.adjust(-15)} className="mono-num text-[13px] text-white/70">−15s</button>
+            <button type="button" onClick={() => rest.adjust(15)} className="mono-num text-[13px] text-white/70">+15s</button>
+            <button type="button" onClick={rest.stop} className="eyebrow text-[11px]">{t("SKIP")}</button>
           </div>
-          <div className="relative h-1 flex-1 overflow-hidden bg-white/20">
-            <div
-              className="absolute inset-y-0 left-0 bg-accent transition-[width] duration-500 ease-linear"
-              style={{ width: `${restTotal ? (rest.remaining / restTotal) * 100 : 0}%` }}
-            />
-          </div>
-          <div className="flex shrink-0 items-center gap-1.5">
-            <button type="button" onClick={() => rest.adjust(-15)} className="mono-num text-[12px] text-white/70">−15</button>
-            <button type="button" onClick={() => rest.adjust(15)} className="mono-num text-[12px] text-white/70">+15</button>
-          </div>
-          {nextBlock?.exercise && (
-            <div className="hidden shrink-0 text-right text-[10px] leading-tight text-white/60 min-[400px]:block">
-              {t("Next")}
-              <br />
-              <span className="font-bold text-white">{localizedExerciseName(nextBlock.exercise, i18n.language)}</span>
-            </div>
-          )}
-          <button type="button" onClick={rest.stop} className="shrink-0 bg-accent px-3 py-2">
-            <span className="eyebrow text-[10px]">{t("SKIP")}</span>
-          </button>
         </div>
       )}
     </div>
   );
 }
 
-function GridStat({ label, value, last }: { label: string; value: string; last?: boolean }) {
+function GridStat({ label, value }: { label: string; value: string }) {
   return (
-    <div className={`px-[22px] py-2.5 ${last ? "" : "border-r border-rule"}`}>
-      <p className="eyebrow text-[9px] text-ink3">{label}</p>
-      <p className="mono-num text-[18px] font-bold text-ink">{value}</p>
+    <div className="px-[14px] py-2.5">
+      <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-ink3">{label}</p>
+      <p className="mt-px font-display text-[16px] font-extrabold tracking-[-0.3px] tabular-nums text-ink">{value}</p>
     </div>
   );
 }
 
-/** Compact, collapsed completed set: weight × reps, RIR, est. 1RM, trend arrow. */
-function DoneRow({ set, index, ghost, onTap }: { set: WorkoutSet; index: number; ghost?: WorkoutSet; onTap: () => void }) {
-  const label = set.kind === "working" ? index + 1 : KIND_ABBR[set.kind];
-  const e1rm = Math.round(OneRM.epley(set.weight, set.reps));
-  const cur = set.weight * set.reps;
-  const prev = ghost ? ghost.weight * ghost.reps : 0;
-  const dir = !ghost ? "none" : cur > prev ? "up" : cur < prev ? "down" : "equal";
-  return (
-    <button
-      type="button"
-      onClick={onTap}
-      className="flex w-full items-center gap-2.5 border-b border-hairline py-2.5 text-left"
-    >
-      <span className="grid h-[26px] w-[26px] place-items-center rounded-full bg-accentSoft font-display text-[12px] font-extrabold text-accent">
-        {label}
-      </span>
-      <span className="flex flex-1 flex-wrap items-center gap-2 font-display text-[15px] font-bold text-ink">
-        <span className="mono-num">
-          {set.weight}<span className="ml-0.5 text-[10px] text-ink3">{weightUnit()}</span> × {set.reps}
-        </span>
-        {set.rir != null && <span className={`mono-num text-[11px] font-bold ${rirColorClass(set.rir)}`}>RIR {set.rir}</span>}
-        {e1rm > 0 && <span className="mono-num text-[11px] font-semibold text-ink3">~{e1rm}</span>}
-        {dir === "up" && <ArrowUp size={11} strokeWidth={3} className="text-ok" />}
-        {dir === "down" && <ArrowDown size={11} strokeWidth={3} className="text-fade" />}
-      </span>
-      <span className="grid h-[22px] w-[22px] place-items-center bg-ink text-white">
-        <Check size={12} strokeWidth={3} />
-      </span>
-    </button>
-  );
+const SET_KINDS: SetKind[] = ["working", "warmup", "dropset", "amrap", "restPause", "myoReps"];
+const KIND_ABBR: Record<SetKind, string> = {
+  working: "", warmup: "W", dropset: "D", amrap: "A", restPause: "RP", myoReps: "M",
+};
+const KIND_LABEL: Record<SetKind, string> = {
+  working: "Working", warmup: "Warm-up", dropset: "Drop set", amrap: "AMRAP", restPause: "Rest-pause", myoReps: "Myo-reps",
+};
+
+/** RIR → text color, matching the Iron RIRStyle scale (0 redlined → 4 fresh). */
+function rirColorClass(rir: number | undefined): string {
+  if (rir == null || Number.isNaN(rir)) return "text-ink";
+  if (rir <= 0) return "text-bad";
+  if (rir === 1) return "text-fade";
+  if (rir === 2) return "text-warn";
+  if (rir === 3) return "text-ok/80";
+  return "text-ok";
 }
 
-/** Pending / current set row — tap anywhere to open the editor. */
-function PendingRow({
-  set, index, ghost, active, onTap,
-}: { set: WorkoutSet; index: number; ghost?: WorkoutSet; active?: boolean; onTap: () => void }) {
-  const { t } = useTranslation();
-  const label = set.kind === "working" ? index + 1 : KIND_ABBR[set.kind];
-  const hasWeight = set.weight > 0 || set.reps > 0;
-  return (
-    <button
-      type="button"
-      onClick={onTap}
-      className={`grid w-full grid-cols-[1.9rem_1fr_1fr_3rem_3.6rem_1.9rem] items-center gap-1.5 border-b border-hairline py-2 text-left ${
-        active ? "-mx-[22px] bg-gradient-to-r from-transparent via-accentSoft to-transparent px-[22px]" : ""
-      }`}
-    >
-      <span
-        className={`grid h-[26px] w-[26px] place-items-center rounded-full font-display text-[12px] font-extrabold ${
-          active ? "bg-accentSoft text-accent" : set.kind !== "working" ? "border border-accent text-accent" : "border border-rule text-ink3"
-        }`}
-      >
-        {label}
-      </span>
-      <span className={`mono-num text-[16px] font-bold ${hasWeight ? (active ? "text-ink" : "text-ink2") : "text-ink3/70"}`}>
-        {set.weight || (ghost ? ghost.weight : 0)}
-      </span>
-      <span className={`mono-num text-[16px] font-bold ${hasWeight ? (active ? "text-ink" : "text-ink2") : "text-ink3/70"}`}>
-        {set.reps || (ghost ? ghost.reps : 0)}
-      </span>
-      <span className={`mono-num text-[11px] font-bold ${rirColorClass(set.rir)}`}>
-        {set.rir != null ? `RIR ${set.rir}` : "—"}
-      </span>
-      <span className="mono-num text-right text-[10px] leading-tight text-ink3">
-        {ghost ? (
-          <>
-            {ghost.weight}×{ghost.reps}
-            <br />
-            <span className="eyebrow text-[8px]">{t("prev")}</span>
-          </>
-        ) : null}
-      </span>
-      <span className="flex justify-end">
-        {active ? (
-          <span className="grid h-[22px] w-[22px] place-items-center border-2 border-accent">
-            <span className="h-2 w-2 bg-accent" />
-          </span>
-        ) : (
-          <span className="h-[22px] w-[22px] border border-rule" />
-        )}
-      </span>
-    </button>
-  );
+/** Recovery %, lower = more fatigued = hotter color. */
+function recoveryColor(pct: number): string {
+  if (pct < 50) return "text-accent";
+  if (pct < 75) return "text-warn";
+  return "text-ok";
 }
 
-/** Dark inline editor — steppers + editable fields + plate stack + Log. */
-function SetEditor({
-  set, index, ghost, unit, repMin, repMax, targetRIR, fallbackWeight, holdProgress, onClose, onLogged,
-}: {
-  set: WorkoutSet;
-  index: number;
-  ghost?: WorkoutSet;
-  unit: "kg" | "lb";
-  repMin?: number;
-  repMax?: number;
-  targetRIR?: number;
-  fallbackWeight?: number;
-  /** Muscle under-recovered — suggestion repeats last session instead of advancing. */
-  holdProgress?: boolean;
-  onClose: () => void;
-  onLogged: () => void;
-}) {
+/** Per-side plate breakdown for the active set — the Iron vertical plate stack. */
+function PlateStrip({ total }: { total: number }) {
   const { t } = useTranslation();
-  // Seed from the set; fall back to ghost (last session) when blank.
-  const [weight, setWeight] = useState(set.weight || ghost?.weight || 0);
-  const [reps, setReps] = useState(set.reps || ghost?.reps || 0);
-  const [rir, setRir] = useState<number>(set.rir ?? ghost?.rir ?? 2);
-  const [kind, setKind] = useState<SetKind>(set.kind);
-  const wStep = unit === "kg" ? 2.5 : 5;
-  const wasDone = set.isCompleted;
-
-  // Smart-autotype suggestion (working sets only): the next progressive-overload
-  // target derived from this set position's ghost. Shown as a one-tap chip when
-  // it differs from the current field values.
-  const suggestion =
-    kind === "working"
-      ? suggestNextSet({
-          last: ghost ? { weight: ghost.weight, reps: ghost.reps, rir: ghost.rir } : undefined,
-          repMin, repMax, targetRIR, increment: wStep, fallbackWeight, holdProgress,
-        })
-      : undefined;
-  const showSuggestion = !!suggestion && (suggestion.weight !== weight || suggestion.reps !== reps);
-  const reasonLabel: Record<NonNullable<typeof suggestion>["reason"], string> = {
-    progress: t("heavier"), addRep: t("+1 rep"), hold: holdProgress ? t("recovery hold") : t("match"),
-  };
-
-  async function commit() {
-    await updateSet(set.id, { weight, reps, rir, kind, isCompleted: true });
-    if (wasDone) onClose();
-    else onLogged();
-  }
-  async function markUndone() {
-    await updateSet(set.id, { weight, reps, rir, kind, isCompleted: false });
-    onClose();
-  }
-  async function remove() {
-    await deleteSet(set.id);
-    onClose();
-  }
-
-  const fields: { label: string; value: number; step: number; min: number; set: (v: number) => void; tint?: string }[] = [
-    { label: t("Weight"), value: weight, step: wStep, min: 0, set: setWeight },
-    { label: t("Reps"), value: reps, step: 1, min: 0, set: setReps },
-    { label: t("RIR"), value: rir, step: 1, min: 0, set: (v) => setRir(Math.min(6, v)), tint: rirHex(rir) },
-  ];
-
-  return (
-    <div className="-mx-[22px] my-1 bg-ink px-[22px] py-4 text-white">
-      <div className="mb-3 flex items-center justify-between">
-        <p className="eyebrow text-accent">
-          {set.kind === "working" ? `${t("SET")} ${index + 1}` : KIND_ABBR[set.kind]} · {wasDone ? t("EDIT") : t("LOGGING")}
-        </p>
-        <div className="flex items-center gap-3">
-          <button type="button" onClick={() => void remove()} aria-label={t("Delete")} className="text-white/55 active:text-bad">
-            <Trash2 size={15} strokeWidth={2.25} />
-          </button>
-          <button type="button" onClick={onClose} className="eyebrow text-[11px] text-white/55">{t("Cancel")}</button>
-        </div>
-      </div>
-
-      {showSuggestion && suggestion && (
-        <button
-          type="button"
-          onClick={() => { setWeight(suggestion.weight); setReps(suggestion.reps); setRir(suggestion.rir); }}
-          className="mb-3 flex w-full items-center gap-2 border border-accent bg-accent/10 px-2.5 py-1.5 text-left active:bg-accent/20"
-        >
-          <Lightbulb size={13} strokeWidth={2.5} className="shrink-0 text-accent" />
-          <span className="eyebrow text-[9px] text-white/55">{t("Suggested")}</span>
-          <span className="mono-num text-[14px] font-extrabold text-accent">
-            {suggestion.weight} × {suggestion.reps}
-          </span>
-          <span className="eyebrow ml-auto text-[9px] text-accent">{reasonLabel[suggestion.reason]}</span>
-        </button>
-      )}
-
-      <div className="grid grid-cols-3 gap-3">
-        {fields.map((f) => (
-          <div key={f.label}>
-            <p className="eyebrow text-[9px] text-white/55">{f.label}</p>
-            <div className="mt-1.5 flex items-center gap-1">
-              <button
-                type="button"
-                aria-label={`${f.label} −`}
-                onClick={() => f.set(Math.max(f.min, +(f.value - f.step).toFixed(2)))}
-                className="grid h-7 w-7 shrink-0 place-items-center bg-white/10 font-display text-[16px] font-extrabold text-white active:bg-white/20"
-              >
-                <Minus size={14} strokeWidth={2.75} />
-              </button>
-              <input
-                inputMode="decimal"
-                value={String(f.value)}
-                onChange={(e) => {
-                  const n = parseFloat(e.target.value);
-                  f.set(Number.isFinite(n) ? Math.max(f.min, n) : 0);
-                }}
-                style={{ color: f.tint }}
-                className="mono-num w-full min-w-0 bg-transparent text-center text-[22px] font-extrabold tracking-tight outline-none"
-              />
-              <button
-                type="button"
-                aria-label={`${f.label} +`}
-                onClick={() => f.set(+(f.value + f.step).toFixed(2))}
-                className="grid h-7 w-7 shrink-0 place-items-center bg-accent font-display text-[16px] font-extrabold text-white active:opacity-80"
-              >
-                <Plus size={14} strokeWidth={2.75} />
-              </button>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {/* Set kind */}
-      <div className="mt-3 flex flex-wrap gap-1.5">
-        {SET_KINDS.map((k) => (
-          <button
-            key={k}
-            type="button"
-            onClick={() => setKind(k)}
-            className={`px-2 py-1 text-[10px] font-bold uppercase tracking-wide ${
-              k === kind ? "bg-accent text-white" : "bg-white/10 text-white/60"
-            }`}
-          >
-            {KIND_ABBR[k] || t(KIND_LABEL[k])}
-          </button>
-        ))}
-      </div>
-
-      <DarkPlateStrip total={weight} unit={unit} />
-
-      <button
-        type="button"
-        onClick={() => void commit()}
-        className="mt-3.5 w-full bg-accent py-3.5 text-white"
-      >
-        <span className="eyebrow text-[13px]">
-          {wasDone ? t("Save") : t("Log")} {weight} × {reps}
-        </span>
-      </button>
-      {wasDone && (
-        <button type="button" onClick={() => void markUndone()} className="mt-2 w-full py-1 text-center">
-          <span className="eyebrow text-[10px] text-white/55">{t("Mark not done")}</span>
-        </button>
-      )}
-    </div>
-  );
-}
-
-/** Per-side plate breakdown, on the dark editor (accent plates on ink). */
-function DarkPlateStrip({ total, unit }: { total: number; unit: "kg" | "lb" }) {
-  const { t } = useTranslation();
+  const unit = weightUnit();
   const bar = unit === "kg" ? 20 : 45;
   const available = unit === "kg" ? STANDARD_KG_PLATES : STANDARD_LB_PLATES;
   if (!total || total <= bar) return null;
@@ -762,10 +373,10 @@ function DarkPlateStrip({ total, unit }: { total: number; unit: "kg" | "lb" }) {
   const label = [...counts.entries()].map(([w, n]) => `${n}×${w}`).join(" · ");
   const maxW = Math.max(...available);
   return (
-    <div className="mt-3.5 border-t border-white/10 pt-3">
-      <div className="mb-2 flex items-baseline justify-between">
-        <span className="eyebrow text-[9px] text-white/55">{`${bar} ${unit} ${t("bar")} · ${t("per side")}`}</span>
-        <span className="mono-num text-[10px] text-white/70">
+    <div className="-mx-[22px] mb-1.5 bg-accentSoft/50 px-[22px] py-2">
+      <div className="mb-1 flex items-baseline justify-between">
+        <span className="eyebrow text-accentInk text-[9px]">{`${bar} ${unit} ${t("bar")} · ${t("per side")}`}</span>
+        <span className="mono-num text-[10px] text-ink2">
           {label}{unloaded > 0 ? ` · +${Math.round(unloaded)} ${t("off")}` : ""}
         </span>
       </div>
@@ -774,12 +385,171 @@ function DarkPlateStrip({ total, unit }: { total: number; unit: "kg" | "lb" }) {
           <div
             key={i}
             className="flex items-center justify-center bg-accent text-white"
-            style={{ width: 7 + (w / maxW) * 9, height: 18 + (w / maxW) * 34 }}
+            style={{ width: 6 + (w / maxW) * 10, height: 16 + (w / maxW) * 34 }}
           >
             <span className="mono-num text-[8px] font-bold" style={{ writingMode: "vertical-rl" }}>{w}</span>
           </div>
         ))}
       </div>
     </div>
+  );
+}
+
+function SetRow({
+  set,
+  index,
+  ghost,
+  active,
+  onComplete,
+}: {
+  set: WorkoutSet;
+  index: number;
+  ghost?: WorkoutSet;
+  active?: boolean;
+  onComplete: (done: boolean) => void;
+}) {
+  const { t } = useTranslation();
+  const unit = weightUnit();
+  const [weight, setWeight] = useState(set.weight ? String(set.weight) : "");
+  const [reps, setReps] = useState(set.reps ? String(set.reps) : "");
+  const [rir, setRir] = useState(set.rir != null ? String(set.rir) : "");
+  const [menu, setMenu] = useState(false);
+
+  const badgeLabel = set.kind === "working" ? index + 1 : KIND_ABBR[set.kind];
+  // Completed (or special kind) badge → peach + accent; plain pending → chip + ink2.
+  const badgeHot = set.isCompleted || (set.kind !== "working" && set.kind !== "warmup");
+  const rirVal = rir.trim() === "" ? undefined : parseInt(rir, 10);
+
+  async function toggle() {
+    if (!set.isCompleted) {
+      await updateSet(set.id, { weight: parseFloat(weight) || 0, reps: parseInt(reps, 10) || 0 });
+    }
+    const done = await toggleSetComplete(set.id);
+    onComplete(done);
+  }
+
+  const Badge = (
+    <button
+      type="button"
+      aria-label={t("Set type")}
+      onClick={() => setMenu((v) => !v)}
+      className={`flex h-[26px] w-[26px] items-center justify-center font-display text-[12px] font-extrabold ${
+        badgeHot ? "bg-accentSoft text-accent" : "bg-chip text-ink2"
+      }`}
+    >
+      {badgeLabel}
+    </button>
+  );
+  const Menu = menu ? (
+    <>
+      <div className="fixed inset-0 z-10" onClick={() => setMenu(false)} />
+      <div className="absolute left-0 top-7 z-20 w-32 border border-ink bg-card">
+        {SET_KINDS.map((k) => (
+          <button
+            key={k}
+            type="button"
+            onClick={() => { void updateSet(set.id, { kind: k }); setMenu(false); }}
+            className={`block w-full px-3 py-2 text-left text-[12px] ${k === set.kind ? "bg-chip font-bold text-ink" : "text-ink2"}`}
+          >
+            {KIND_ABBR[k] ? `${KIND_ABBR[k]} · ` : ""}{t(KIND_LABEL[k])}
+          </button>
+        ))}
+      </div>
+    </>
+  ) : null;
+
+  // ---- COMPLETED: compact summary row (tap check to re-open) ----
+  if (set.isCompleted) {
+    const beatGhost = ghost ? set.weight * set.reps > ghost.weight * ghost.reps : false;
+    return (
+      <div className="flex items-center py-[11px]">
+        <div className="relative w-[30px]">{Badge}{Menu}</div>
+        <div className="flex flex-1 items-center gap-2">
+          <span className="font-display text-[15px] font-bold text-ink">
+            {set.weight}
+            <span className="ml-0.5 text-[10px] font-bold text-ink3">{unit}</span>
+            <span className="mx-1">×</span>
+            {set.reps}
+          </span>
+          {set.rir != null ? (
+            <span className={`font-display text-[11px] font-bold ${rirColorClass(set.rir)}`}>{set.rir} RIR</span>
+          ) : null}
+          {beatGhost ? <ArrowUp size={10} strokeWidth={3} className="text-ok" /> : null}
+        </div>
+        <button
+          type="button"
+          aria-label="edit set"
+          onClick={toggle}
+          className="flex h-[22px] w-[22px] items-center justify-center bg-ink text-white"
+        >
+          <Check size={12} strokeWidth={3} />
+        </button>
+      </div>
+    );
+  }
+
+  // ---- PENDING: full input row ----
+  return (
+    <>
+      <div className="grid grid-cols-[30px_61px_61px_64px_70px_30px] items-center gap-1.5 py-[7px]">
+        <div className="relative">{Badge}{Menu}</div>
+        <input
+          inputMode="decimal"
+          value={weight}
+          placeholder={ghost ? String(ghost.weight) : "0"}
+          onChange={(e) => setWeight(e.target.value)}
+          onBlur={() => void updateSet(set.id, { weight: parseFloat(weight) || 0 })}
+          className="mono-num w-full border border-rule bg-card px-1.5 py-1.5 text-[15px] text-ink outline-none focus:border-ink placeholder:text-ink3/60"
+        />
+        <input
+          inputMode="numeric"
+          value={reps}
+          placeholder={ghost ? String(ghost.reps) : "0"}
+          onChange={(e) => setReps(e.target.value)}
+          onBlur={() => void updateSet(set.id, { reps: parseInt(reps, 10) || 0 })}
+          className="mono-num w-full border border-rule bg-card px-1.5 py-1.5 text-[15px] text-ink outline-none focus:border-ink placeholder:text-ink3/60"
+        />
+        <input
+          inputMode="numeric"
+          value={rir}
+          placeholder={ghost?.rir != null ? String(ghost.rir) : "–"}
+          onChange={(e) => setRir(e.target.value)}
+          onBlur={() => void updateSet(set.id, { rir: rir.trim() === "" ? undefined : parseInt(rir, 10) || 0 })}
+          className={`mono-num w-full border border-rule bg-card px-1 py-1.5 text-center text-[14px] font-semibold outline-none focus:border-ink placeholder:text-ink3/50 ${rirColorClass(rirVal)}`}
+        />
+        {ghost ? (
+          <button
+            type="button"
+            aria-label={`${t("Last")} ${ghost.weight}×${ghost.reps}`}
+            onClick={() => {
+              setWeight(String(ghost.weight));
+              setReps(String(ghost.reps));
+              void updateSet(set.id, { weight: ghost.weight, reps: ghost.reps });
+            }}
+            className="text-right leading-none"
+          >
+            <span className="mono-num block text-[10px] text-ink3">{ghost.weight} ×</span>
+            <span className="block text-[9px] font-semibold uppercase tracking-[0.06em] text-ink3">{t("prev")}</span>
+          </button>
+        ) : (
+          <span className="text-right text-ink3/40">·</span>
+        )}
+        <button
+          type="button"
+          aria-label="complete set"
+          onClick={toggle}
+          className="flex h-[22px] w-[22px] items-center justify-self-end"
+        >
+          {active ? (
+            <span className="m-auto h-2 w-2 bg-accent" />
+          ) : (
+            <span className="m-auto grid h-[22px] w-[22px] place-items-center border border-rule text-transparent">
+              <Check size={12} strokeWidth={3} />
+            </span>
+          )}
+        </button>
+      </div>
+      {active && <PlateStrip total={parseFloat(weight) || 0} />}
+    </>
   );
 }

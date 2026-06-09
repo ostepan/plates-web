@@ -1,5 +1,5 @@
 import { db } from "./db";
-import type { ID, Session } from "../models/types";
+import type { ID, Session, WorkoutSet } from "../models/types";
 import type { MuscleGroup } from "../models/enums";
 import { OneRM } from "../calc/oneRM";
 import { Performance, type Point } from "../calc/performance";
@@ -65,6 +65,57 @@ export async function exerciseE1RMSeries(exerciseId: ID): Promise<Point[]> {
     if (best > 0) points.push({ date: session.date, value: Math.round(best * 10) / 10 });
   }
   return points;
+}
+
+/**
+ * Best Epley e1RM for every exercise across all finished sessions — computed in
+ * a single DB pass. Use this when you need PRs for many exercises at once (e.g.
+ * the active-workout header), instead of calling `exerciseE1RMSeries` per
+ * exercise, which re-scans the whole history each time.
+ */
+/**
+ * Most-recent completed working sets ("ghost" values) for every exercise, from
+ * finished sessions, in a single DB pass. Companion to `bestE1RMByExercise` for
+ * the active-workout view — replaces N calls to `lastCompletedSets`, each of
+ * which re-scans the session history.
+ */
+export async function lastWorkingSetsByExercise(excludeSessionId: ID): Promise<Map<ID, WorkoutSet[]>> {
+  const sessions = (await finishedSessions())
+    .filter((s) => s.id !== excludeSessionId)
+    .sort((a, b) => b.date - a.date); // newest first
+  const { sxs, byId } = await setsBySessionExercise(sessions.map((s) => s.id));
+  const sxsBySession = new Map<ID, typeof sxs>();
+  for (const sx of sxs) {
+    const arr = sxsBySession.get(sx.sessionId) ?? [];
+    arr.push(sx);
+    sxsBySession.set(sx.sessionId, arr);
+  }
+  const out = new Map<ID, WorkoutSet[]>();
+  for (const session of sessions) {
+    for (const sx of sxsBySession.get(session.id) ?? []) {
+      if (!sx.exerciseId || out.has(sx.exerciseId)) continue; // first (newest) wins
+      const sets = (byId.get(sx.id) ?? [])
+        .filter((s) => s.isCompleted && s.kind === "working")
+        .sort((a, b) => a.order - b.order);
+      if (sets.length) out.set(sx.exerciseId, sets);
+    }
+  }
+  return out;
+}
+
+export async function bestE1RMByExercise(): Promise<Map<ID, number>> {
+  const sessions = await finishedSessions();
+  const { sxs, byId } = await setsBySessionExercise(sessions.map((s) => s.id));
+  const best = new Map<ID, number>();
+  for (const sx of sxs) {
+    if (!sx.exerciseId) continue;
+    for (const s of byId.get(sx.id) ?? []) {
+      if (!s.isCompleted || s.kind !== "working") continue;
+      const e = OneRM.epley(s.weight, s.reps);
+      if (e > (best.get(sx.exerciseId) ?? 0)) best.set(sx.exerciseId, e);
+    }
+  }
+  return best;
 }
 
 export interface MuscleVolumeRow {
