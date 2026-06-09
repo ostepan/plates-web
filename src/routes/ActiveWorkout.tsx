@@ -2,11 +2,12 @@ import { useEffect, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { useNavigate, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { ArrowUp, Check, Lightbulb, Sparkles } from "lucide-react";
+import { ArrowUp, Check, Lightbulb, Plus, Sparkles } from "lucide-react";
 import { db } from "@core/db/db";
 import {
-  addSet, discardSession, finishSession, toggleSetComplete, updateSet,
+  addExerciseToSession, addSet, discardSession, finishSession, toggleSetComplete, updateSet,
 } from "@core/db/mutations";
+import { ExercisePicker } from "@app/components/ExercisePicker";
 import { bestE1RMByExercise, lastWorkingSetsByExercise } from "@core/db/analytics";
 import { getRecoverySettings, muscleRecovery } from "@core/db/recovery";
 import { Recovery } from "@core/calc/recovery";
@@ -51,6 +52,7 @@ export function ActiveWorkout() {
   const navigate = useNavigate();
   const { t, i18n } = useTranslation();
   const rest = useRestTimer();
+  const [picking, setPicking] = useState(false);
   const [openCues, setOpenCues] = useState<Set<ID>>(() => new Set());
   const toggleCues = (sxId: ID) =>
     setOpenCues((prev) => {
@@ -334,8 +336,16 @@ export function ActiveWorkout() {
           );
         })}
 
-        {/* Finish */}
+        {/* Add exercise / finish */}
         <div className="px-[22px] pb-[max(3.75rem,env(safe-area-inset-bottom))] pt-5">
+          <button
+            type="button"
+            onClick={() => setPicking(true)}
+            className="mb-3 flex h-[46px] w-full items-center justify-center gap-2 border border-ink text-ink active:bg-chip"
+          >
+            <Plus size={14} strokeWidth={2.5} />
+            <span className="font-display text-[12px] font-extrabold uppercase tracking-[0.14em]">{t("ADD EXERCISE")}</span>
+          </button>
           <button
             type="button"
             onClick={() => void finish()}
@@ -352,6 +362,16 @@ export function ActiveWorkout() {
           </button>
         </div>
       </div>
+
+      {picking && (
+        <ExercisePicker
+          onClose={() => setPicking(false)}
+          onPick={(exerciseId) => {
+            void addExerciseToSession(sessionId, exerciseId);
+            setPicking(false);
+          }}
+        />
+      )}
 
       {rest.running && (
         <div className="absolute inset-x-0 bottom-0 flex items-center justify-between border-t border-rule bg-ink px-5 py-3 text-white pb-[max(0.75rem,env(safe-area-inset-bottom))]">
