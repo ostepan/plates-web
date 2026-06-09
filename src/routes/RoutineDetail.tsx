@@ -9,10 +9,12 @@ import { MUSCLE_I18N_KEY } from "@core/models/enums";
 import { supersetBadge } from "@core/superset";
 import { IronTopBar, IronToolbarButton } from "@ui/components/IronTopBar";
 import { localizedExerciseName, relativeDay } from "@app/lib/format";
+import { useGoBack } from "@app/hooks/useGoBack";
 
 export function RoutineDetail() {
   const { id = "" } = useParams();
   const navigate = useNavigate();
+  const goBack = useGoBack("/workout");
   const { t, i18n } = useTranslation();
 
   const routine = useLiveQuery(() => db.routines.get(id), [id]);
@@ -76,7 +78,7 @@ export function RoutineDetail() {
     <div className="flex h-[100dvh] flex-col bg-bg">
       <IronTopBar
         leading={
-          <IronToolbarButton onClick={() => navigate("/workout")} label={t("Back")}>
+          <IronToolbarButton onClick={goBack} label={t("Back")}>
             <ChevronLeft size={18} strokeWidth={2.5} />
           </IronToolbarButton>
         }

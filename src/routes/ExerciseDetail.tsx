@@ -11,6 +11,7 @@ import { MUSCLE_I18N_KEY } from "@core/models/enums";
 import type { Point } from "@core/calc/performance";
 import { IronTopBar, IronToolbarButton } from "@ui/components/IronTopBar";
 import { formatDuration, localizedExerciseName, relativeDay, weightUnit } from "@app/lib/format";
+import { useGoBack } from "@app/hooks/useGoBack";
 
 export function ExerciseDetail() {
   const { id = "" } = useParams();
@@ -44,7 +45,7 @@ export function ExerciseDetail() {
   }, [ex]);
 
   // Reached from the exercise list *and* mid-workout — go back to wherever we came from.
-  const goBack = () => (window.history.length > 1 ? navigate(-1) : navigate("/exercises"));
+  const goBack = useGoBack("/exercises");
 
   if (ex === undefined) return null; // loading
   if (ex === null) {

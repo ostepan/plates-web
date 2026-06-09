@@ -41,7 +41,7 @@ export function RoutineEditor() {
       <IronTopBar
         title={t("Edit routine")}
         trailing={
-          <IronToolbarButton onClick={() => navigate(`/workout/routine/${id}`)} label={t("Save")}>
+          <IronToolbarButton onClick={() => navigate(`/workout/routine/${id}`, { replace: true })} label={t("Save")}>
             <Check size={18} strokeWidth={2.5} />
           </IronToolbarButton>
         }

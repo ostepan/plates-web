@@ -1,14 +1,14 @@
 import { useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { ChevronLeft } from "lucide-react";
 import { STANDARD_KG_PLATES, STANDARD_LB_PLATES, plates } from "@core/calc/plate";
 import { IronTopBar, IronToolbarButton } from "@ui/components/IronTopBar";
 import { weightUnit } from "@app/lib/format";
+import { useGoBack } from "@app/hooks/useGoBack";
 
 export function PlateCalculator() {
   const { t } = useTranslation();
-  const navigate = useNavigate();
+  const goBack = useGoBack("/profile");
   const unit = weightUnit();
   const defaultBar = unit === "kg" ? 20 : 45;
   const [target, setTarget] = useState(unit === "kg" ? 100 : 225);
@@ -24,7 +24,7 @@ export function PlateCalculator() {
       <IronTopBar
         title={t("Plate Calculator")}
         leading={
-          <IronToolbarButton onClick={() => navigate("/profile")} label={t("Back")}>
+          <IronToolbarButton onClick={goBack} label={t("Back")}>
             <ChevronLeft size={18} strokeWidth={2.5} />
           </IronToolbarButton>
         }

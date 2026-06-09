@@ -1,15 +1,16 @@
 import { useLiveQuery } from "dexie-react-hooks";
-import { useNavigate, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { ChevronLeft } from "lucide-react";
 import { db } from "@core/db/db";
 import type { Exercise, ID, WorkoutSet } from "@core/models/types";
 import { IronTopBar, IronToolbarButton } from "@ui/components/IronTopBar";
 import { formatDuration, localizedExerciseName, relativeDay, weightUnit } from "@app/lib/format";
+import { useGoBack } from "@app/hooks/useGoBack";
 
 export function SessionDetail() {
   const { sessionId = "" } = useParams();
-  const navigate = useNavigate();
+  const goBack = useGoBack("/history");
   const { t, i18n } = useTranslation();
   const unit = weightUnit();
 
@@ -38,7 +39,7 @@ export function SessionDetail() {
     <div className="flex h-[100dvh] flex-col bg-bg">
       <IronTopBar
         leading={
-          <IronToolbarButton onClick={() => navigate("/history")} label={t("Back")}>
+          <IronToolbarButton onClick={goBack} label={t("Back")}>
             <ChevronLeft size={18} strokeWidth={2.5} />
           </IronToolbarButton>
         }

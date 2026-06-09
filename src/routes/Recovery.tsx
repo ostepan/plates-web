@@ -15,6 +15,7 @@ import type { RecoveryVerdict } from "@core/calc/recovery";
 import { IronTopBar, IronToolbarButton } from "@ui/components/IronTopBar";
 import { IronSegmented } from "@ui/components/IronSegmented";
 import { IronEmptyState } from "@ui/components/IronEmptyState";
+import { useGoBack } from "@app/hooks/useGoBack";
 
 const DAY = 86_400_000;
 const dayStart = (ts: number) => Math.floor(ts / DAY) * DAY;
@@ -33,6 +34,7 @@ type Segment = "status" | "checkin" | "trends";
 export function Recovery() {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const goBack = useGoBack("/workout");
   const [params] = useSearchParams();
   const initialSeg = params.get("seg");
   const [seg, setSeg] = useState<Segment>(
@@ -44,7 +46,7 @@ export function Recovery() {
       <IronTopBar
         title={t("Recovery")}
         leading={
-          <IronToolbarButton onClick={() => navigate(-1)} label={t("Back")}>
+          <IronToolbarButton onClick={goBack} label={t("Back")}>
             <ChevronLeft size={18} strokeWidth={2.5} />
           </IronToolbarButton>
         }

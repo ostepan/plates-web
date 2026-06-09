@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
-import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { ChevronLeft, Trash2 } from "lucide-react";
 import { db } from "@core/db/db";
@@ -8,10 +7,11 @@ import { addBodyWeight, deleteBodyWeight } from "@core/db/mutations";
 import { IronTopBar, IronToolbarButton } from "@ui/components/IronTopBar";
 import { IronEmptyState } from "@ui/components/IronEmptyState";
 import { relativeDay, weightUnit } from "@app/lib/format";
+import { useGoBack } from "@app/hooks/useGoBack";
 
 export function BodyWeight() {
   const { t, i18n } = useTranslation();
-  const navigate = useNavigate();
+  const goBack = useGoBack("/profile");
   const unit = weightUnit();
   const [value, setValue] = useState("");
 
@@ -37,7 +37,7 @@ export function BodyWeight() {
       <IronTopBar
         title={t("Body weight")}
         leading={
-          <IronToolbarButton onClick={() => navigate("/profile")} label={t("Back")}>
+          <IronToolbarButton onClick={goBack} label={t("Back")}>
             <ChevronLeft size={18} strokeWidth={2.5} />
           </IronToolbarButton>
         }

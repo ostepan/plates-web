@@ -9,6 +9,7 @@ import {
 import type { Program } from "@core/models/types";
 import { IronTopBar, IronToolbarButton } from "@ui/components/IronTopBar";
 import { IronMenu, type IronMenuItem } from "@ui/components/IronMenu";
+import { useGoBack } from "@app/hooks/useGoBack";
 
 interface ProgramRow {
   p: Program;
@@ -17,6 +18,7 @@ interface ProgramRow {
 
 export function ProgramsList() {
   const navigate = useNavigate();
+  const goBack = useGoBack("/workout");
   const { t } = useTranslation();
 
   const programs = useLiveQuery(
@@ -90,7 +92,7 @@ export function ProgramsList() {
       <IronTopBar
         title={t("Programs")}
         leading={
-          <IronToolbarButton onClick={() => navigate("/workout")} label={t("Back")}>
+          <IronToolbarButton onClick={goBack} label={t("Back")}>
             <ChevronLeft size={18} strokeWidth={2.5} />
           </IronToolbarButton>
         }
