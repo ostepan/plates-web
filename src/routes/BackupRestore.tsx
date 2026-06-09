@@ -1,14 +1,14 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { ChevronLeft, Download, Upload } from "lucide-react";
 import { exportBackup, exportCSV, importBackup } from "@core/db/backup";
 import { IronTopBar, IronToolbarButton } from "@ui/components/IronTopBar";
 import { downloadText, pickTextFile } from "@app/lib/download";
+import { useGoBack } from "@app/hooks/useGoBack";
 
 export function BackupRestore() {
   const { t } = useTranslation();
-  const navigate = useNavigate();
+  const goBack = useGoBack("/profile");
   const [status, setStatus] = useState<string | null>(null);
 
   const stamp = () => new Date().toISOString().slice(0, 10);
@@ -36,7 +36,7 @@ export function BackupRestore() {
       <IronTopBar
         title={t("Backup")}
         leading={
-          <IronToolbarButton onClick={() => navigate("/profile")} label={t("Back")}>
+          <IronToolbarButton onClick={goBack} label={t("Back")}>
             <ChevronLeft size={18} strokeWidth={2.5} />
           </IronToolbarButton>
         }

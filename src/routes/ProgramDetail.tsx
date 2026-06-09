@@ -6,6 +6,7 @@ import { activateProgram, deactivateProgram, deleteProgram, startProgramDay } fr
 import { loadProgram } from "@core/db/queries";
 import type { ProgressionRule } from "@core/models/enums";
 import { IronTopBar, IronToolbarButton } from "@ui/components/IronTopBar";
+import { useGoBack } from "@app/hooks/useGoBack";
 
 const RULE_KEY: Record<ProgressionRule, string> = {
   linear: "LINEAR",
@@ -17,6 +18,7 @@ const RULE_KEY: Record<ProgressionRule, string> = {
 export function ProgramDetail() {
   const { id = "" } = useParams();
   const navigate = useNavigate();
+  const goBack = useGoBack("/programs");
   const { t } = useTranslation();
 
   const data = useLiveQuery(() => loadProgram(id), [id]);
@@ -42,7 +44,7 @@ export function ProgramDetail() {
     <div className="flex h-[100dvh] flex-col bg-bg">
       <IronTopBar
         leading={
-          <IronToolbarButton onClick={() => navigate("/programs")} label={t("Back")}>
+          <IronToolbarButton onClick={goBack} label={t("Back")}>
             <ChevronLeft size={18} strokeWidth={2.5} />
           </IronToolbarButton>
         }

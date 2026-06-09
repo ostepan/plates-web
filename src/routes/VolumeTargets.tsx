@@ -1,5 +1,4 @@
 import { useLiveQuery } from "dexie-react-hooks";
-import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { ChevronLeft } from "lucide-react";
 import { db } from "@core/db/db";
@@ -7,10 +6,12 @@ import { updateVolumeTarget } from "@core/db/mutations";
 import { MUSCLE_I18N_KEY } from "@core/models/enums";
 import { IronTopBar, IronToolbarButton } from "@ui/components/IronTopBar";
 import { Stepper } from "@ui/components/Stepper";
+import { useGoBack } from "@app/hooks/useGoBack";
 
 export function VolumeTargets() {
   const { t } = useTranslation();
-  const navigate = useNavigate();
+  // Reached from Profile *and* the Recovery trends deload card — pop to origin.
+  const goBack = useGoBack("/profile");
   const targets = useLiveQuery(
     async () => (await db.muscleVolumeTargets.toArray()).sort((a, b) => a.muscleGroup.localeCompare(b.muscleGroup)),
     [],
@@ -22,7 +23,7 @@ export function VolumeTargets() {
       <IronTopBar
         title={t("Volume targets")}
         leading={
-          <IronToolbarButton onClick={() => navigate("/profile")} label={t("Back")}>
+          <IronToolbarButton onClick={goBack} label={t("Back")}>
             <ChevronLeft size={18} strokeWidth={2.5} />
           </IronToolbarButton>
         }

@@ -6,9 +6,11 @@ import { db } from "@core/db/db";
 import { IronTopBar, IronToolbarButton } from "@ui/components/IronTopBar";
 import { IronEmptyState } from "@ui/components/IronEmptyState";
 import { formatDuration, relativeDay, weightUnit } from "@app/lib/format";
+import { useGoBack } from "@app/hooks/useGoBack";
 
 export function History() {
   const navigate = useNavigate();
+  const goBack = useGoBack("/analytics");
   const { t, i18n } = useTranslation();
   const unit = weightUnit();
 
@@ -23,7 +25,7 @@ export function History() {
       <IronTopBar
         title={t("History")}
         leading={
-          <IronToolbarButton onClick={() => navigate("/workout")} label={t("Back")}>
+          <IronToolbarButton onClick={goBack} label={t("Back")}>
             <ChevronLeft size={18} strokeWidth={2.5} />
           </IronToolbarButton>
         }

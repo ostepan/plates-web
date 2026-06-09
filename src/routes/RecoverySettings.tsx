@@ -1,5 +1,4 @@
 import { useLiveQuery } from "dexie-react-hooks";
-import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { ChevronLeft } from "lucide-react";
 import { updateRecoverySettings } from "@core/db/mutations";
@@ -8,6 +7,7 @@ import { BASE_RECOVERY } from "@core/calc/recovery";
 import { ALL_MUSCLE_GROUPS, MUSCLE_I18N_KEY } from "@core/models/enums";
 import { IronTopBar, IronToolbarButton } from "@ui/components/IronTopBar";
 import { Stepper } from "@ui/components/Stepper";
+import { useGoBack } from "@app/hooks/useGoBack";
 
 const DAY = 86_400_000;
 const HOUR = 3600;
@@ -25,7 +25,7 @@ const fromDateInput = (v: string): number | undefined => {
 
 export function RecoverySettings() {
   const { t } = useTranslation();
-  const navigate = useNavigate();
+  const goBack = useGoBack("/recovery");
   // Read-only merge over defaults; updateRecoverySettings creates the row on demand.
   const s = useLiveQuery(() => getRecoverySettings(), []);
 
@@ -58,7 +58,7 @@ export function RecoverySettings() {
       <IronTopBar
         title={t("Recovery settings")}
         leading={
-          <IronToolbarButton onClick={() => navigate("/recovery")} label={t("Back")}>
+          <IronToolbarButton onClick={goBack} label={t("Back")}>
             <ChevronLeft size={18} strokeWidth={2.5} />
           </IronToolbarButton>
         }
