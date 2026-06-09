@@ -1,13 +1,16 @@
 import { useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { Brain, ChevronLeft, Flame, Moon, Utensils, Zap } from "lucide-react";
+import { Brain, ChevronLeft, Flame, Moon, Settings, Utensils, Zap } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import { saveRecoveryCheckIn } from "@core/db/mutations";
-import { factorTrends, muscleRecovery, recoveryScoreHistory, todayFactors } from "@core/db/recovery";
+import { markMuscleReady, saveRecoveryCheckIn } from "@core/db/mutations";
+import {
+  factorTrends, getRecoverySettings, muscleRecovery, muscleRecoveryDailyHistory,
+  recoveryScoreHistory, todayFactors,
+} from "@core/db/recovery";
 import { overallRecoveryScore } from "@core/calc/recovery";
-import { MUSCLE_I18N_KEY } from "@core/models/enums";
+import { MUSCLE_I18N_KEY, type MuscleGroup } from "@core/models/enums";
 import type { RecoveryVerdict } from "@core/calc/recovery";
 import { IronTopBar, IronToolbarButton } from "@ui/components/IronTopBar";
 import { IronSegmented } from "@ui/components/IronSegmented";
@@ -30,7 +33,11 @@ type Segment = "status" | "checkin" | "trends";
 export function Recovery() {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const [seg, setSeg] = useState<Segment>("status");
+  const [params] = useSearchParams();
+  const initialSeg = params.get("seg");
+  const [seg, setSeg] = useState<Segment>(
+    initialSeg === "checkin" || initialSeg === "trends" ? initialSeg : "status",
+  );
 
   return (
     <div className="flex h-[100dvh] flex-col bg-bg">
@@ -39,6 +46,11 @@ export function Recovery() {
         leading={
           <IronToolbarButton onClick={() => navigate(-1)} label={t("Back")}>
             <ChevronLeft size={18} strokeWidth={2.5} />
+          </IronToolbarButton>
+        }
+        trailing={
+          <IronToolbarButton onClick={() => navigate("/recovery/settings")} label={t("Recovery settings")}>
+            <Settings size={16} strokeWidth={2.25} />
           </IronToolbarButton>
         }
       />
@@ -63,9 +75,14 @@ export function Recovery() {
 // ─── Status — recommendation banner + per-muscle grid ─────────────────────────
 function RecoveryStatus() {
   const { t } = useTranslation();
-  const rows = useLiveQuery(() => muscleRecovery(), [], undefined);
+  const data = useLiveQuery(
+    async () => ({ rows: await muscleRecovery(), settings: await getRecoverySettings() }),
+    [],
+    undefined,
+  );
 
-  if (rows === undefined) return null;
+  if (data === undefined) return null;
+  const { rows, settings } = data;
   if (rows.length === 0) {
     return (
       <IronEmptyState
@@ -76,8 +93,9 @@ function RecoveryStatus() {
     );
   }
 
+  const fatigueLine = settings.partiallyRecoveredThreshold;
   const freshest = [...rows].sort((a, b) => b.recoveryPercentage - a.recoveryPercentage)[0];
-  const fatigued = rows.filter((r) => r.recoveryPercentage < 50);
+  const fatigued = rows.filter((r) => r.recoveryPercentage < fatigueLine);
   const skipNames = fatigued.map((r) => t(MUSCLE_I18N_KEY[r.muscleGroup]));
 
   return (
@@ -93,7 +111,7 @@ function RecoveryStatus() {
         </p>
         <p className="mt-1.5 text-[12px] leading-relaxed text-white/65">
           {skipNames.length
-            ? t("Skip {{muscles}} today — still under 50%.", { muscles: skipNames.join(", ") })
+            ? t("Skip {{muscles}} today — still under {{pct}}%.", { muscles: skipNames.join(", "), pct: fatigueLine })
             : t("Everything's recovered enough to train hard today.")}
         </p>
       </div>
@@ -131,6 +149,15 @@ function RecoveryStatus() {
                   {r.isReady ? t("ready") : r.daysUntilReady <= 1 ? t("~1 day") : `~${r.daysUntilReady} ${t("days")}`}
                 </span>
               </div>
+              {!r.isReady && (
+                <button
+                  type="button"
+                  onClick={() => void markMuscleReady(r.muscleGroup)}
+                  className="eyebrow mt-2 text-[9px] text-ink3 underline decoration-rule underline-offset-2 active:text-accent"
+                >
+                  {t("Mark ready")}
+                </button>
+              )}
             </div>
           );
         })}
@@ -277,8 +304,17 @@ function RecoveryTrends() {
   const data = useLiveQuery(async () => {
     const hist = await recoveryScoreHistory(28);
     const ft = await factorTrends(7);
-    return { hist, ft };
+    const rows = await muscleRecovery();
+    const settings = await getRecoverySettings();
+    return { hist, ft, rows, settings };
   }, [], undefined);
+  const [pickedMuscle, setPickedMuscle] = useState<MuscleGroup | null>(null);
+  const muscle = pickedMuscle ?? data?.rows[0]?.muscleGroup ?? null;
+  const muscleHist = useLiveQuery(
+    () => (muscle ? muscleRecoveryDailyHistory(muscle, 14) : Promise.resolve(null)),
+    [muscle],
+    null,
+  );
 
   if (data === undefined) return null;
 
@@ -334,9 +370,17 @@ function RecoveryTrends() {
         </div>
         {last14.length >= 2 ? (
           <>
-            <Sparkline points={last14.map((p) => p.score)} />
+            <Sparkline
+              points={last14.map((p) => p.score)}
+              // gap-aware 7-day trailing mean per check-in
+              avg={last14.map((p) => {
+                const win = data.hist.filter((q) => q.date > p.date - 7 * DAY && q.date <= p.date);
+                return win.reduce((s, q) => s + q.score, 0) / win.length;
+              })}
+            />
             <div className="mt-1 flex justify-between font-mono text-[9px] text-ink3">
               <span>{t("14d ago")}</span>
+              <span className="text-accent">— {t("7d avg")}</span>
               <span>{t("Today")}</span>
             </div>
           </>
@@ -354,6 +398,41 @@ function RecoveryTrends() {
           </div>
         ))}
       </div>
+
+      {/* Per-muscle recovery history */}
+      {muscle && data.rows.length > 0 && (
+        <div className="mx-[22px] mt-3 border border-rule px-4 py-3.5">
+          <div className="flex items-baseline justify-between">
+            <p className="eyebrow text-ink3">{t("Muscle recovery · 14d")}</p>
+            <p className="mono-num text-[10px] text-ink3">
+              {t("ready")} ≥ {data.settings.readyThreshold}%
+            </p>
+          </div>
+          <div className="mt-2.5 flex flex-wrap gap-1.5">
+            {data.rows.map((r) => (
+              <button
+                key={r.muscleGroup}
+                type="button"
+                onClick={() => setPickedMuscle(r.muscleGroup)}
+                className={`px-2 py-1 text-[10px] font-bold uppercase tracking-wide ${
+                  r.muscleGroup === muscle ? "bg-ink text-white" : "bg-chip text-ink2"
+                }`}
+              >
+                {t(MUSCLE_I18N_KEY[r.muscleGroup])}
+              </button>
+            ))}
+          </div>
+          {muscleHist && muscleHist.length >= 2 && (
+            <>
+              <Sparkline points={muscleHist.map((p) => p.recovery)} refLine={data.settings.readyThreshold} />
+              <div className="mt-1 flex justify-between font-mono text-[9px] text-ink3">
+                <span>{t("14d ago")}</span>
+                <span>{t("Today")}</span>
+              </div>
+            </>
+          )}
+        </div>
+      )}
 
       {/* Per-factor insights */}
       {data.ft && (
@@ -433,17 +512,30 @@ function FactorInsight({
 
 // Lightweight inline sparkline (scores 0–100). Kept inline so Recovery stays out
 // of the Recharts code-split bundle (Recharts only loads behind the lazy Analytics tab).
-function Sparkline({ points }: { points: number[] }) {
+// `avg` draws a second dashed series (e.g. 7d moving average); `refLine` draws a
+// horizontal threshold marker (e.g. the ready threshold).
+function Sparkline({ points, avg, refLine }: { points: number[]; avg?: number[]; refLine?: number }) {
   const w = 320;
   const h = 64;
   const pad = 4;
   const stepX = points.length > 1 ? (w - pad * 2) / (points.length - 1) : 0;
-  const xy = points.map((p, i) => [pad + i * stepX, pad + (1 - p / 100) * (h - pad * 2)] as const);
-  const line = xy.map(([x, y], i) => `${i ? "L" : "M"}${x.toFixed(1)} ${y.toFixed(1)}`).join(" ");
+  const toXY = (series: number[]) =>
+    series.map((p, i) => [pad + i * stepX, pad + (1 - p / 100) * (h - pad * 2)] as const);
+  const toPath = (xy: (readonly [number, number])[]) =>
+    xy.map(([x, y], i) => `${i ? "L" : "M"}${x.toFixed(1)} ${y.toFixed(1)}`).join(" ");
+  const xy = toXY(points);
+  const line = toPath(xy);
   const area = `${line} L${xy[xy.length - 1][0].toFixed(1)} ${h} L${xy[0][0].toFixed(1)} ${h} Z`;
+  const refY = refLine != null ? pad + (1 - refLine / 100) * (h - pad * 2) : null;
   return (
     <svg viewBox={`0 0 ${w} ${h}`} className="mt-3 w-full" role="img" aria-label="Recovery trend">
       <path d={area} className="fill-accentSoft" />
+      {refY != null && (
+        <line x1={0} x2={w} y1={refY} y2={refY} className="stroke-ink3" strokeWidth={1} strokeDasharray="2 3" />
+      )}
+      {avg && avg.length === points.length && (
+        <path d={toPath(toXY(avg))} className="fill-none stroke-accent" strokeWidth={1.5} strokeDasharray="4 3" />
+      )}
       <path d={line} className="fill-none stroke-ink" strokeWidth={2} />
       {xy.map(([x, y], i) => (
         <circle key={i} cx={x} cy={y} r={2.5} className="fill-ink" />

@@ -18,6 +18,15 @@ describe("suggestNextSet (smart-autotype progression)", () => {
     expect(s).toEqual({ weight: 100, reps: 10, rir: 2, reason: "addRep" });
   });
 
+  it("holdProgress pins the suggestion to last session's numbers", () => {
+    // would otherwise progress (top of window, RIR to spare)
+    const s = suggestNextSet({
+      last: { weight: 100, reps: 12, rir: 3 },
+      repMin: 8, repMax: 12, targetRIR: 2, increment: 2.5, holdProgress: true,
+    });
+    expect(s).toEqual({ weight: 100, reps: 12, rir: 2, reason: "hold" });
+  });
+
   it("holds when last set met target RIR but not the top of the range", () => {
     const s = suggestNextSet({
       last: { weight: 100, reps: 9, rir: 2 },

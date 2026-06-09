@@ -1,5 +1,14 @@
 # Recovery feature — improvement plan
 
+> **Status: implemented.** All three phases below shipped (formula overhaul in
+> `packages/core/calc/recovery.ts` + `packages/core/db/recovery.ts`, settings screen at
+> `/recovery/settings`, Mark-as-Ready, set-cap warning, recovery-aware progression hold,
+> trends upgrades, check-in nudge). The two deviations from the plan as written:
+> notification toggle was skipped (nothing on web fires recovery notifications yet, a
+> dead toggle is worse than none) and the per-muscle history chart is retro-computed
+> from sessions rather than persisted (`muscleRecoveryDailyHistory`), so it needs no
+> new table or write path.
+
 Audit of the recovery stack (`packages/core/calc/recovery.ts`, `packages/core/db/recovery.ts`,
 `src/routes/Recovery.tsx` + consumers in `WorkoutTab`, `RoutineDetail`, `ActiveWorkout`) with a
 phased plan: a better formula first, then wiring up the dead settings model, then surfacing

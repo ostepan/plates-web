@@ -9,7 +9,8 @@ import {
   groupSessionExerciseWithPrevious, lastCompletedSets, ungroupSessionExercise, updateSet,
 } from "@core/db/mutations";
 import { bestE1RMByExercise } from "@core/db/queries";
-import { muscleRecovery } from "@core/db/recovery";
+import { getRecoverySettings, muscleRecovery } from "@core/db/recovery";
+import { Recovery } from "@core/calc/recovery";
 import type { Exercise, ID, WorkoutSet } from "@core/models/types";
 import type { SetKind } from "@core/models/enums";
 import { MUSCLE_I18N_KEY } from "@core/models/enums";
@@ -82,7 +83,16 @@ export function ActiveWorkout() {
   };
 
   const session = useLiveQuery(() => db.sessions.get(sessionId), [sessionId]);
-  const recovery = useLiveQuery(() => muscleRecovery(), [], []);
+  const recData = useLiveQuery(
+    async () => ({ rows: await muscleRecovery(), settings: await getRecoverySettings() }),
+    [],
+    undefined,
+  );
+  const recovery = recData?.rows ?? [];
+  // Fatigue gates: below `capLine` the set-cap warning arms; below `holdLine`
+  // the smart-autotype suggestion stops proposing load/rep advances.
+  const capLine = recData?.settings.mostlyRecoveredThreshold ?? 70;
+  const holdLine = recData?.settings.partiallyRecoveredThreshold ?? 50;
   const blocks = useLiveQuery(
     async (): Promise<Block[]> => {
       const sess = await db.sessions.get(sessionId);
@@ -216,6 +226,15 @@ export function ActiveWorkout() {
           const showCollapsed = exDone && !collapsedEx.has(`open:${b.sxId}` as ID);
           const activeSetId = isCurrent ? b.sets.find((s) => !s.isCompleted)?.id : undefined;
           const rec = b.exercise ? recByMuscle.get(b.exercise.muscleGroup) : undefined;
+          // Volume-cap guard: sets a fatigued muscle can absorb vs the plan.
+          const workingDone = b.sets.filter((s) => s.isCompleted && s.kind === "working").length;
+          const plannedSets = b.target?.sets ?? b.sets.filter((s) => s.kind === "working").length;
+          const setCap =
+            rec && rec.recoveryPercentage < capLine
+              ? Recovery.recommendedSetCap(plannedSets, rec.recoveryPercentage, capLine)
+              : null;
+          const showCapWarning = setCap != null && !exDone && workingDone >= setCap;
+          const holdProgress = !!rec && rec.recoveryPercentage < holdLine;
           const top = b.sets.length ? Math.max(...b.sets.map((s) => s.weight)) : 0;
           const blockVol = b.sets.reduce((v, s) => v + s.weight * s.reps, 0);
           const badge = supersetBadge(groupItems, bi);
@@ -317,6 +336,17 @@ export function ActiveWorkout() {
                 </p>
               ) : null}
 
+              {/* Volume-cap warning for fatigued muscles (iOS parity) */}
+              {showCapWarning && b.exercise && (
+                <p className="mx-[22px] mt-2.5 border border-warn bg-warn/10 px-3 py-2 text-[12px] leading-relaxed text-ink">
+                  {t("{{muscle}} is at {{pct}}% — consider stopping at {{cap}} working sets today.", {
+                    muscle: t(MUSCLE_I18N_KEY[b.exercise.muscleGroup]),
+                    pct: Math.round(rec!.recoveryPercentage),
+                    cap: setCap,
+                  })}
+                </p>
+              )}
+
               {showCollapsed ? (
                 <button
                   type="button"
@@ -349,6 +379,7 @@ export function ActiveWorkout() {
                         repMax={b.target?.max}
                         targetRIR={b.target?.rir}
                         fallbackWeight={b.target?.weight}
+                        holdProgress={holdProgress}
                         onClose={() => setEditingSetId(null)}
                         onLogged={() => { setEditingSetId(null); startRest(b.restSeconds); }}
                       />
@@ -558,7 +589,7 @@ function PendingRow({
 
 /** Dark inline editor — steppers + editable fields + plate stack + Log. */
 function SetEditor({
-  set, index, ghost, unit, repMin, repMax, targetRIR, fallbackWeight, onClose, onLogged,
+  set, index, ghost, unit, repMin, repMax, targetRIR, fallbackWeight, holdProgress, onClose, onLogged,
 }: {
   set: WorkoutSet;
   index: number;
@@ -568,6 +599,8 @@ function SetEditor({
   repMax?: number;
   targetRIR?: number;
   fallbackWeight?: number;
+  /** Muscle under-recovered — suggestion repeats last session instead of advancing. */
+  holdProgress?: boolean;
   onClose: () => void;
   onLogged: () => void;
 }) {
@@ -587,12 +620,12 @@ function SetEditor({
     kind === "working"
       ? suggestNextSet({
           last: ghost ? { weight: ghost.weight, reps: ghost.reps, rir: ghost.rir } : undefined,
-          repMin, repMax, targetRIR, increment: wStep, fallbackWeight,
+          repMin, repMax, targetRIR, increment: wStep, fallbackWeight, holdProgress,
         })
       : undefined;
   const showSuggestion = !!suggestion && (suggestion.weight !== weight || suggestion.reps !== reps);
   const reasonLabel: Record<NonNullable<typeof suggestion>["reason"], string> = {
-    progress: t("heavier"), addRep: t("+1 rep"), hold: t("match"),
+    progress: t("heavier"), addRep: t("+1 rep"), hold: holdProgress ? t("recovery hold") : t("match"),
   };
 
   async function commit() {

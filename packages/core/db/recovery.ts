@@ -1,10 +1,16 @@
 import { db } from "./db";
-import type { Exercise, ID, RecoveryFactors } from "../models/types";
+import type { Exercise, ID, RecoveryFactors, RecoverySettings } from "../models/types";
 import type { MuscleGroup } from "../models/enums";
-import { Recovery, overallRecoveryScore, type RecoveryResult, type RecoveryVerdict } from "../calc/recovery";
+import {
+  RECOVERY_SETTINGS_DEFAULTS, Recovery, overallRecoveryScore,
+  type FatigueImpulse, type RecoveryResult, type RecoveryThresholds, type RecoveryVerdict,
+} from "../calc/recovery";
 
 const DAY = 86_400_000;
 const dayStart = (ts: number) => Math.floor(ts / DAY) * DAY;
+
+/** Sessions older than this can't carry meaningful residual fatigue. */
+const IMPULSE_WINDOW_DAYS = 10;
 
 export interface MuscleRecovery extends RecoveryResult {
   lastTrainedAt: number;
@@ -12,15 +18,38 @@ export interface MuscleRecovery extends RecoveryResult {
   verdict: RecoveryVerdict;
 }
 
-/** Most-recent daily check-in (drives the factors multiplier). */
+export type ResolvedRecoverySettings = Omit<RecoverySettings, "id" | "createdAt" | "updatedAt">;
+
+/** The RecoverySettings singleton merged over app defaults (read-only; never creates). */
+export async function getRecoverySettings(): Promise<ResolvedRecoverySettings> {
+  const row = (await db.recoverySettings.toArray())[0];
+  if (row) return row;
+  return { ...RECOVERY_SETTINGS_DEFAULTS, notificationsEnabled: false, customRecoveryTimes: {} };
+}
+
+export function thresholdsOf(s: {
+  readyThreshold: number;
+  mostlyRecoveredThreshold: number;
+  partiallyRecoveredThreshold: number;
+}): RecoveryThresholds {
+  return {
+    ready: s.readyThreshold,
+    acceptable: s.mostlyRecoveredThreshold,
+    caution: s.partiallyRecoveredThreshold,
+  };
+}
+
+/** Most-recent daily check-in (drives the factors multiplier, staleness-decayed). */
 export async function latestFactors(): Promise<RecoveryFactors | undefined> {
-  return (await db.recoveryFactors.toArray()).sort((a, b) => b.date - a.date)[0];
+  return db.recoveryFactors.orderBy("date").last();
 }
 
 /** Today's check-in, if one exists (for pre-filling the form). */
 export async function todayFactors(): Promise<RecoveryFactors | undefined> {
   const start = dayStart(Date.now());
-  return (await db.recoveryFactors.toArray()).find((f) => dayStart(f.date) === start);
+  return (await db.recoveryFactors.where("date").aboveOrEqual(start).toArray()).find(
+    (f) => dayStart(f.date) === start,
+  );
 }
 
 export interface RecoveryScorePoint {
@@ -31,8 +60,7 @@ export interface RecoveryScorePoint {
 /** Daily overall-recovery score (0–100) for each check-in within the last `days`, oldest→newest. */
 export async function recoveryScoreHistory(days = 14): Promise<RecoveryScorePoint[]> {
   const since = dayStart(Date.now()) - (days - 1) * DAY;
-  return (await db.recoveryFactors.toArray())
-    .filter((f) => f.date >= since)
+  return (await db.recoveryFactors.where("date").aboveOrEqual(since).toArray())
     .sort((a, b) => a.date - b.date)
     .map((f) => ({ date: f.date, score: Math.round(overallRecoveryScore(f)) }));
 }
@@ -70,9 +98,9 @@ export async function factorTrends(
   const today = dayStart(Date.now());
   const curSince = today - (days - 1) * DAY;
   const prevSince = curSince - days * DAY;
-  const all = await db.recoveryFactors.toArray();
+  const all = await db.recoveryFactors.where("date").aboveOrEqual(prevSince).toArray();
   const current = all.filter((f) => f.date >= curSince);
-  const previous = all.filter((f) => f.date >= prevSince && f.date < curSince);
+  const previous = all.filter((f) => f.date < curSince);
   if (!current.length && !previous.length) return null;
   return {
     current: averageFactors(current),
@@ -82,64 +110,147 @@ export async function factorTrends(
   };
 }
 
-/** Per-muscle recovery %, fatigued-first. Derives last-trained + volume from finished sessions. */
-export async function muscleRecovery(): Promise<MuscleRecovery[]> {
-  const sessions = (await db.sessions.where("durationSeconds").above(0).toArray()).sort(
-    (a, b) => b.date - a.date,
+/**
+ * Per-muscle fatigue impulses from finished sessions in the trailing window.
+ * Working-set counts credit the exercise's primary muscle in full and each
+ * secondary muscle at `secondaryImpact`; RPE is the set-weighted mean of the
+ * session's logged RPE/RIR for that muscle (default 7 when nothing is logged).
+ */
+async function fatigueImpulses(
+  secondaryImpact: number,
+  since: number,
+): Promise<Map<MuscleGroup, FatigueImpulse[]>> {
+  const sessions = (await db.sessions.where("date").aboveOrEqual(since).toArray()).filter(
+    (s) => s.durationSeconds > 0,
   );
-  if (!sessions.length) return [];
+  if (!sessions.length) return new Map();
 
-  const exMuscle = new Map((await db.exercises.toArray()).map((e) => [e.id, e.muscleGroup]));
+  const exById = new Map<ID, Exercise>((await db.exercises.toArray()).map((e) => [e.id, e]));
   const sxs = await db.sessionExercises.where("sessionId").anyOf(sessions.map((s) => s.id)).toArray();
   const sets = await db.workoutSets.where("sessionExerciseId").anyOf(sxs.map((s) => s.id)).toArray();
+  const sxById = new Map(sxs.map((sx) => [sx.id, sx]));
+  const dateBySession = new Map(sessions.map((s) => [s.id, s.date]));
 
-  const workingBySx = new Map<ID, number>();
-  for (const s of sets) {
-    if (s.isCompleted && s.kind === "working") workingBySx.set(s.sessionExerciseId, (workingBySx.get(s.sessionExerciseId) ?? 0) + 1);
-  }
-  const sxBySession = new Map<ID, typeof sxs>();
-  for (const sx of sxs) {
-    const arr = sxBySession.get(sx.sessionId) ?? [];
-    arr.push(sx);
-    sxBySession.set(sx.sessionId, arr);
+  // (sessionId, muscle) → { sets, rpeWeight, rpeSets }
+  const acc = new Map<string, { muscle: MuscleGroup; date: number; sets: number; rpeSum: number; rpeSets: number }>();
+  for (const set of sets) {
+    if (!set.isCompleted || set.kind !== "working") continue;
+    const sx = sxById.get(set.sessionExerciseId);
+    const ex = sx?.exerciseId ? exById.get(sx.exerciseId) : undefined;
+    const date = sx ? dateBySession.get(sx.sessionId) : undefined;
+    if (!sx || !ex || date === undefined) continue;
+    const rpe = set.rpe ?? (set.rir != null ? 10 - set.rir : undefined);
+
+    const credit = (muscle: MuscleGroup, weight: number) => {
+      const key = `${sx.sessionId}|${muscle}`;
+      const a = acc.get(key) ?? { muscle, date, sets: 0, rpeSum: 0, rpeSets: 0 };
+      a.sets += weight;
+      if (rpe != null) {
+        a.rpeSum += rpe * weight;
+        a.rpeSets += weight;
+      }
+      acc.set(key, a);
+    };
+    credit(ex.muscleGroup, 1);
+    if (secondaryImpact > 0) for (const m of ex.secondary) credit(m, secondaryImpact);
   }
 
-  // walk newest→oldest; first session to train a muscle wins (= most recent)
-  const last = new Map<MuscleGroup, { date: number; volume: number }>();
-  for (const session of sessions) {
-    const perMuscle = new Map<MuscleGroup, number>();
-    for (const sx of sxBySession.get(session.id) ?? []) {
-      const mg = sx.exerciseId ? exMuscle.get(sx.exerciseId) : undefined;
-      if (!mg) continue;
-      perMuscle.set(mg, (perMuscle.get(mg) ?? 0) + (workingBySx.get(sx.id) ?? 0));
-    }
-    for (const [mg, vol] of perMuscle) if (vol > 0 && !last.has(mg)) last.set(mg, { date: session.date, volume: vol });
+  const out = new Map<MuscleGroup, FatigueImpulse[]>();
+  for (const a of acc.values()) {
+    if (a.sets <= 0) continue;
+    const arr = out.get(a.muscle) ?? [];
+    arr.push({ trainedAt: a.date, sets: a.sets, rpe: a.rpeSets > 0 ? a.rpeSum / a.rpeSets : undefined });
+    out.set(a.muscle, arr);
   }
+  return out;
+}
+
+/**
+ * Per-muscle recovery %, fatigued-first. Accumulates residual fatigue from all
+ * finished sessions in the trailing window (secondary muscles included), honors
+ * "Mark as Ready" overrides, and applies the user's thresholds and deload window.
+ */
+export async function muscleRecovery(): Promise<MuscleRecovery[]> {
+  const now = Date.now();
+  const settings = await getRecoverySettings();
+  const thresholds = thresholdsOf(settings);
+
+  const impulses = await fatigueImpulses(settings.secondaryMuscleImpact, now - IMPULSE_WINDOW_DAYS * DAY);
+  if (!impulses.size) return [];
 
   const factors = await latestFactors();
   const profile = (await db.userProfile.toArray())[0];
-  const settings = (await db.recoverySettings.toArray())[0];
   const deload =
-    settings?.deloadStartDate && settings?.deloadEndDate &&
-    Date.now() >= settings.deloadStartDate && Date.now() <= settings.deloadEndDate
-      ? settings.deloadMultiplier ?? 1
+    settings.deloadStartDate && settings.deloadEndDate &&
+    now >= settings.deloadStartDate && now <= settings.deloadEndDate
+      ? settings.deloadMultiplier
       : 1;
+  // "Mark as Ready" wipes fatigue logged before the override; training again re-fatigues.
+  const overrideAt = new Map(
+    (await db.muscleRecoveryStatus.toArray()).map((s) => [s.muscleGroup, s.updatedAt]),
+  );
 
   const out: MuscleRecovery[] = [];
-  for (const [mg, info] of last) {
+  for (const [mg, all] of impulses) {
+    const cutoff = overrideAt.get(mg);
+    const active = cutoff ? all.filter((i) => i.trainedAt > cutoff) : all;
     const r = Recovery.calculateRecovery({
       muscleGroup: mg,
-      lastTrainedAt: info.date,
-      trainingVolume: info.volume,
+      impulses: active,
       factors: factors ?? null,
+      factorsAgeHours: factors ? Math.max(0, (now - factors.date) / 3_600_000) : 0,
       userAge: profile?.age ?? null,
-      customRecoveryTimes: settings?.customRecoveryTimes,
+      customRecoveryTimes: settings.customRecoveryTimes,
       deloadMultiplier: deload,
+      thresholds,
+      now,
     });
-    const daysSinceTrained = Math.floor((Date.now() - info.date) / DAY);
-    out.push({ ...r, lastTrainedAt: info.date, daysSinceTrained, verdict: Recovery.verdict(r.recoveryPercentage, daysSinceTrained) });
+    const lastTrainedAt = Math.max(...all.map((i) => i.trainedAt));
+    const daysSinceTrained = Math.floor((now - lastTrainedAt) / DAY);
+    out.push({
+      ...r,
+      lastTrainedAt,
+      daysSinceTrained,
+      verdict: Recovery.verdict(r.recoveryPercentage, daysSinceTrained, thresholds),
+    });
   }
   return out.sort((a, b) => a.recoveryPercentage - b.recoveryPercentage);
+}
+
+export interface MuscleHistoryPoint {
+  date: number; // day start, epoch ms
+  recovery: number; // 0–100 at end of that day
+}
+
+/**
+ * Retro-computed daily recovery % for one muscle over the last `days`
+ * (evaluated at each day's end), for the Trends muscle-history chart.
+ */
+export async function muscleRecoveryDailyHistory(
+  muscle: MuscleGroup,
+  days = 14,
+): Promise<MuscleHistoryPoint[]> {
+  const now = Date.now();
+  const settings = await getRecoverySettings();
+  const since = dayStart(now) - (days - 1 + IMPULSE_WINDOW_DAYS) * DAY;
+  const impulses = (await fatigueImpulses(settings.secondaryMuscleImpact, since)).get(muscle) ?? [];
+  const profile = (await db.userProfile.toArray())[0];
+
+  const out: MuscleHistoryPoint[] = [];
+  for (let d = days - 1; d >= 0; d--) {
+    const date = dayStart(now) - d * DAY;
+    const at = Math.min(now, date + DAY - 1);
+    const r = Recovery.calculateRecovery({
+      muscleGroup: muscle,
+      impulses: impulses.filter((i) => i.trainedAt <= at),
+      userAge: profile?.age ?? null,
+      customRecoveryTimes: settings.customRecoveryTimes,
+      thresholds: thresholdsOf(settings),
+      now: at,
+    });
+    out.push({ date, recovery: r.recoveryPercentage });
+  }
+  return out;
 }
 
 export interface SwapCandidate {
@@ -155,16 +266,17 @@ export interface SwapSuggestion {
 
 /**
  * For each routine exercise whose primary muscle is fatigued (recovery below
- * `fatigueThreshold`), suggest fresher alternatives. Candidates target a
- * different, more-recovered muscle (≥ `gate` percentage points fresher),
- * ranked by recovery → same equipment → same mechanic, deduped to one per
- * muscle so the picks are varied. Port of iOS `WorkoutRecommender.getSwapSuggestions`.
+ * the partially-recovered threshold), suggest fresher alternatives. Candidates
+ * target a different, more-recovered muscle (≥ `gate` percentage points
+ * fresher), ranked by recovery → same equipment → same mechanic, deduped to one
+ * per muscle so the picks are varied. Port of iOS `WorkoutRecommender.getSwapSuggestions`.
  */
 export async function getSwapSuggestions(
   routineId: ID,
   opts?: { fatigueThreshold?: number; gate?: number; maxPerExercise?: number },
 ): Promise<SwapSuggestion[]> {
-  const fatigueThreshold = opts?.fatigueThreshold ?? 50;
+  const fatigueThreshold =
+    opts?.fatigueThreshold ?? (await getRecoverySettings()).partiallyRecoveredThreshold;
   const gate = opts?.gate ?? 15;
   const maxPer = opts?.maxPerExercise ?? 3;
 

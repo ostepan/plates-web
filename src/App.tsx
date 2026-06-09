@@ -24,6 +24,7 @@ import { ProgramsList } from "./routes/ProgramsList";
 import { ProgramDetail } from "./routes/ProgramDetail";
 import { CustomProgramEditor } from "./routes/CustomProgramEditor";
 import { Recovery } from "./routes/Recovery";
+import { RecoverySettings } from "./routes/RecoverySettings";
 import { PlateCalculator } from "./routes/PlateCalculator";
 import { BodyWeight } from "./routes/BodyWeight";
 import { VolumeTargets } from "./routes/VolumeTargets";
@@ -154,6 +155,7 @@ export function App() {
         <Route path="/history" element={<History />} />
         <Route path="/history/:sessionId" element={<SessionDetail />} />
         <Route path="/recovery" element={<Recovery />} />
+        <Route path="/recovery/settings" element={<RecoverySettings />} />
         <Route path="/profile/plate-calculator" element={<PlateCalculator />} />
         <Route path="/profile/body-weight" element={<BodyWeight />} />
         <Route path="/profile/volume-targets" element={<VolumeTargets />} />

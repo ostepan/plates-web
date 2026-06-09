@@ -20,7 +20,17 @@ Legend: ✅ done · 🟡 partial · ⬜ todo · ➖ N/A on web (platform).
 | Session summary — PRs, plateau, deload note | `SessionSummary.tsx` |
 | History — list + session detail | `History.tsx`, `SessionDetail.tsx` |
 | Analytics — stats/overview, exercise e1RM, weekly volume (MEV/MAV/MRV), PR timeline, consistency heatmap | `AnalyticsTab` + segments, `ConsistencyHeatmap` |
-| Recovery — status, check-in, settings (thresholds), insights, recommendation, deload | `Recovery.tsx`, `db/recovery.ts`, `calc/recovery.ts` |
+| Recovery — status grid (+ **Mark as Ready**), check-in, trends (7d avg + per-muscle history), insights, recommendation, deload | `Recovery.tsx`, `db/recovery.ts`, `calc/recovery.ts` |
+| **Recovery settings screen** — 4 monotonic thresholds, secondary-muscle impact, per-muscle custom recovery times, deload window | `RecoverySettings.tsx`, `getOrCreateRecoverySettings` |
+| **Volume cap warning** in active workout (recovery-scaled set cap, orange banner) | `ActiveWorkout.tsx`, `Recovery.recommendedSetCap` |
+| **Recovery-aware progression hold** — autotype suggestion stops advancing when the muscle is under the partially-recovered threshold | `suggestNextSet({ holdProgress })`, `ActiveWorkout.tsx` |
+| Daily **check-in nudge** on the Workout tab | `WorkoutTab.tsx` |
+
+> **Formula divergence (deliberate):** the web recovery model is no longer a 1:1 port of
+> `RecoveryCalculator.swift`. It uses exponential fatigue decay with multi-session
+> superposition, secondary-muscle dose credit, logged-RPE intensity, smooth (lerp)
+> multipliers and check-in staleness decay — calibrated so a baseline session is still
+> "ready" exactly at the iOS base recovery time. See `RECOVERY_PLAN.md`.
 | Programs — list, detail (calendar, activate), deload, progression engine | `ProgramsList`, `ProgramDetail`, `db/programs` |
 | Volume targets editor (MEV/MAV/MRV) | `VolumeTargets.tsx` |
 | Plate calculator (standalone) | `PlateCalculator.tsx`, `calc/plate.ts` |
@@ -46,7 +56,6 @@ Legend: ✅ done · 🟡 partial · ⬜ todo · ➖ N/A on web (platform).
 | Set **stopwatch** | per-set stopwatch service | only workout-elapsed timer; i18n strings exist, no impl |
 | Workout recommender | today + routine + **swaps** | recommendation done; **swap suggestions missing** |
 | Summary celebration | trophy + **confetti** | stats/PRs done; **no confetti** (no ConfettiView equiv) |
-| Recovery on routine detail | verdict + fatigue guard + swaps | recommend present; pre-start guard + swaps unverified/absent |
 
 ## ⬜ Todo (real screens missing)
 | Feature | iOS source |
