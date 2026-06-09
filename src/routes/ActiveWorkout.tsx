@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { useNavigate, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { ArrowUp, Check, Lightbulb } from "lucide-react";
+import { ArrowUp, Check, Lightbulb, Sparkles } from "lucide-react";
 import { db } from "@core/db/db";
 import {
   addSet, discardSession, finishSession, toggleSetComplete, updateSet,
@@ -10,12 +10,12 @@ import {
 import { bestE1RMByExercise, lastWorkingSetsByExercise } from "@core/db/analytics";
 import { getRecoverySettings, muscleRecovery } from "@core/db/recovery";
 import { Recovery } from "@core/calc/recovery";
+import { suggestNextSet, type SetSuggestion } from "@core/calc/progression";
 import type { Exercise, ID, WorkoutSet } from "@core/models/types";
 import type { MuscleGroup, SetKind } from "@core/models/enums";
 import { MUSCLE_I18N_KEY } from "@core/models/enums";
-import { STANDARD_KG_PLATES, STANDARD_LB_PLATES, plates } from "@core/calc/plate";
 import { supersetBadge } from "@core/superset";
-import { formatDuration, localizedExerciseName, weightUnit } from "@app/lib/format";
+import { formatDuration, localizedExerciseName, relativeDay, weightUnit } from "@app/lib/format";
 import { useRestTimer } from "@app/hooks/useRestTimer";
 
 interface Block {
@@ -23,6 +23,8 @@ interface Block {
   exercise?: Exercise;
   sets: WorkoutSet[];
   ghost: WorkoutSet[];
+  lastDate?: number;
+  suggestions: (SetSuggestion | undefined)[];
   restSeconds: number;
   target?: { sets: number; min: number; max: number; weight?: number };
   pr?: number;
@@ -72,6 +74,8 @@ export function ActiveWorkout() {
       const recByMuscle = new Map(recovery.map((r) => [r.muscleGroup, r.recoveryPercentage]));
       const prByExercise = await bestE1RMByExercise();
       const lastByExercise = await lastWorkingSetsByExercise(sessionId);
+      const settings = await getRecoverySettings();
+      const increment = weightUnit() === "kg" ? 2.5 : 5;
       const sxs = (await db.sessionExercises.where("sessionId").equals(sessionId).toArray()).sort(
         (a, b) => a.order - b.order,
       );
@@ -81,13 +85,31 @@ export function ActiveWorkout() {
           const sets = (await db.workoutSets.where("sessionExerciseId").equals(sx.id).toArray()).sort(
             (a, b) => a.order - b.order,
           );
-          const ghost = sx.exerciseId ? lastByExercise.get(sx.exerciseId) ?? [] : [];
+          const last = sx.exerciseId ? lastByExercise.get(sx.exerciseId) : undefined;
+          const ghost = last?.sets ?? [];
           const re = sx.exerciseId ? targetByEx.get(sx.exerciseId) : undefined;
           const prRaw = sx.exerciseId ? prByExercise.get(sx.exerciseId) : undefined;
           const pr = prRaw ? Math.round(prRaw) : undefined;
           const pct = exercise ? recByMuscle.get(exercise.muscleGroup) : undefined;
+          // Smart auto-type: hold progression while the muscle is under-recovered.
+          const holdProgress = pct != null && pct < settings.mostlyRecoveredThreshold;
+          const suggestions = sets.map((s, i) => {
+            if (s.isCompleted) return undefined;
+            const basis = ghost.length ? ghost[Math.min(i, ghost.length - 1)] : undefined;
+            return suggestNextSet({
+              last: basis ? { weight: basis.weight, reps: basis.reps, rir: basis.rir } : undefined,
+              repMin: re?.targetRepsMin,
+              repMax: re?.targetRepsMax,
+              targetRIR: re?.targetRIR,
+              increment,
+              fallbackWeight: re?.targetWeight,
+              holdProgress,
+            });
+          });
           return {
             sxId: sx.id, exercise, sets, ghost,
+            lastDate: last?.date,
+            suggestions,
             restSeconds: exercise?.defaultRestSeconds ?? 120,
             target: re
               ? { sets: re.targetSets, min: re.targetRepsMin, max: re.targetRepsMax, weight: re.targetWeight }
@@ -194,9 +216,13 @@ export function ActiveWorkout() {
                     {badge ? (
                       <span className="mono-num border border-accent px-1 text-[10px] font-bold text-accent">{badge.label}</span>
                     ) : null}
-                    <span className="font-display text-[20px] font-extrabold tracking-[-0.4px] leading-[22px] text-ink">
+                    <button
+                      type="button"
+                      onClick={() => b.exercise && navigate(`/exercises/${b.exercise.id}`)}
+                      className="text-left font-display text-[20px] font-extrabold tracking-[-0.4px] leading-[22px] text-ink active:text-accent"
+                    >
                       {b.exercise ? localizedExerciseName(b.exercise, i18n.language) : "—"}
-                    </span>
+                    </button>
                     {b.exercise?.userNotes ? (
                       <button
                         type="button"
@@ -218,9 +244,17 @@ export function ActiveWorkout() {
                   </span>
                 </div>
 
-                {/* Tgt / PR / recovery sub-line */}
-                <div className="ml-7 mt-1.5 flex items-center gap-4 text-[11px]">
-                  {b.target ? (
+                {/* Last time / PR / recovery sub-line */}
+                <div className="ml-7 mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px]">
+                  {b.ghost.length ? (
+                    <span className="text-ink2">
+                      <span className="mr-1.5 text-[9px] font-bold uppercase tracking-[0.08em] text-ink3">{t("Last")}</span>
+                      <b className="mono-num text-[11px] font-bold text-ink">{lastSummary(b.ghost)}</b>
+                      {b.lastDate != null ? (
+                        <span className="ml-1.5 text-[9px] text-ink3">{relativeDay(b.lastDate, i18n.language)}</span>
+                      ) : null}
+                    </span>
+                  ) : b.target ? (
                     <span className="text-ink2">
                       <span className="mr-1.5 text-[9px] font-bold uppercase tracking-[0.08em] text-ink3">{t("Tgt")}</span>
                       <b className="font-display text-[11px] font-bold text-ink">
@@ -235,8 +269,16 @@ export function ActiveWorkout() {
                     </span>
                   ) : null}
                   {b.recovery ? (
-                    <span className={`ml-auto text-[10px] font-bold ${recoveryColor(b.recovery.pct)}`}>
-                      {b.recovery.code} {b.recovery.pct}%
+                    <span className="ml-auto flex items-center gap-1.5">
+                      <span className={`text-[10px] font-bold ${recoveryColor(b.recovery.pct)}`}>
+                        {b.recovery.code} {b.recovery.pct}%
+                      </span>
+                      <span className="h-[3px] w-7 overflow-hidden bg-chip">
+                        <span
+                          className={`block h-full ${recoveryBarClass(b.recovery.pct)}`}
+                          style={{ width: `${Math.max(0, Math.min(100, b.recovery.pct))}%` }}
+                        />
+                      </span>
                     </span>
                   ) : null}
                 </div>
@@ -275,6 +317,7 @@ export function ActiveWorkout() {
                     set={s}
                     index={i}
                     ghost={b.ghost[i] ?? b.ghost.at(-1)}
+                    suggest={b.suggestions[i]}
                     active={s.id === activeSetId}
                     onComplete={(done) => done && rest.start(b.restSeconds)}
                   />
@@ -359,64 +402,59 @@ function recoveryColor(pct: number): string {
   return "text-ok";
 }
 
-/** Per-side plate breakdown for the active set — the Iron vertical plate stack. */
-function PlateStrip({ total }: { total: number }) {
-  const { t } = useTranslation();
-  const unit = weightUnit();
-  const bar = unit === "kg" ? 20 : 45;
-  const available = unit === "kg" ? STANDARD_KG_PLATES : STANDARD_LB_PLATES;
-  if (!total || total <= bar) return null;
-  const { perSide, unloaded } = plates(total, bar, available);
-  if (perSide.length === 0) return null;
-  const counts = new Map<number, number>();
-  for (const p of perSide) counts.set(p, (counts.get(p) ?? 0) + 1);
-  const label = [...counts.entries()].map(([w, n]) => `${n}×${w}`).join(" · ");
-  const maxW = Math.max(...available);
-  return (
-    <div className="-mx-[22px] mb-1.5 bg-accentSoft/50 px-[22px] py-2">
-      <div className="mb-1 flex items-baseline justify-between">
-        <span className="eyebrow text-accentInk text-[9px]">{`${bar} ${unit} ${t("bar")} · ${t("per side")}`}</span>
-        <span className="mono-num text-[10px] text-ink2">
-          {label}{unloaded > 0 ? ` · +${Math.round(unloaded)} ${t("off")}` : ""}
-        </span>
-      </div>
-      <div className="flex items-end gap-[3px]">
-        {perSide.map((w, i) => (
-          <div
-            key={i}
-            className="flex items-center justify-center bg-accent text-white"
-            style={{ width: 6 + (w / maxW) * 10, height: 16 + (w / maxW) * 34 }}
-          >
-            <span className="mono-num text-[8px] font-bold" style={{ writingMode: "vertical-rl" }}>{w}</span>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
+/** Bar variant of `recoveryColor` for the mini recovery gauge. */
+function recoveryBarClass(pct: number): string {
+  if (pct < 50) return "bg-accent";
+  if (pct < 75) return "bg-warn";
+  return "bg-ok";
 }
+
+/** "80×8/8/7" when the weight held, otherwise "80×8 75×8 …". */
+function lastSummary(sets: WorkoutSet[]): string {
+  if (!sets.length) return "";
+  const sameWeight = sets.every((s) => s.weight === sets[0].weight);
+  return sameWeight
+    ? `${sets[0].weight}×${sets.map((s) => s.reps).join("/")}`
+    : sets.map((s) => `${s.weight}×${s.reps}`).join(" ");
+}
+
+/** Why the suggestion says what it says — chip label per progression reason. */
+const SUGGEST_REASON_KEY: Record<SetSuggestion["reason"], string> = {
+  progress: "Add weight",
+  addRep: "+1 rep",
+  hold: "Repeat",
+};
 
 function SetRow({
   set,
   index,
   ghost,
+  suggest,
   active,
   onComplete,
 }: {
   set: WorkoutSet;
   index: number;
   ghost?: WorkoutSet;
+  suggest?: SetSuggestion;
   active?: boolean;
   onComplete: (done: boolean) => void;
 }) {
   const { t } = useTranslation();
   const unit = weightUnit();
-  // Smart autotype: pre-fill from the last session's matching set so a pending
-  // row is loggable with a single tap; persisted on blur/complete as before.
+  // Smart autotype: pre-fill from the progression suggestion (falls back to the
+  // last session's matching set) so a pending row is loggable with a single tap;
+  // persisted on blur/complete as before. Warm-ups follow their own loading.
+  const prefill = set.kind !== "warmup" ? suggest : undefined;
   const [weight, setWeight] = useState(
-    set.weight ? String(set.weight) : ghost?.weight ? String(ghost.weight) : "",
+    set.weight ? String(set.weight)
+    : prefill?.weight ? String(prefill.weight)
+    : ghost?.weight ? String(ghost.weight) : "",
   );
   const [reps, setReps] = useState(
-    set.reps ? String(set.reps) : ghost?.reps ? String(ghost.reps) : "",
+    set.reps ? String(set.reps)
+    : prefill?.reps ? String(prefill.reps)
+    : ghost?.reps ? String(ghost.reps) : "",
   );
   const [rir, setRir] = useState(set.rir != null ? String(set.rir) : "");
   const [menu, setMenu] = useState(false);
@@ -425,13 +463,30 @@ function SetRow({
   // Completed (or special kind) badge → peach + accent; plain pending → chip + ink2.
   const badgeHot = set.isCompleted || (set.kind !== "working" && set.kind !== "warmup");
   const rirVal = rir.trim() === "" ? undefined : parseInt(rir, 10);
+  // Suggestions target working sets — warm-ups follow their own logic.
+  const showSuggest = suggest && set.kind !== "warmup";
 
   async function toggle() {
     if (!set.isCompleted) {
-      await updateSet(set.id, { weight: parseFloat(weight) || 0, reps: parseInt(reps, 10) || 0 });
+      // Blank fields complete with the suggested (or last-time) numbers — zero-typing logging.
+      const typedW = parseFloat(weight);
+      const typedR = parseInt(reps, 10);
+      const w = Number.isFinite(typedW) ? typedW : (showSuggest ? suggest.weight : ghost?.weight) ?? 0;
+      const r = Number.isFinite(typedR) ? typedR : (showSuggest ? suggest.reps : ghost?.reps) ?? 0;
+      setWeight(w ? String(w) : "");
+      setReps(r ? String(r) : "");
+      await updateSet(set.id, { weight: w, reps: r });
     }
     const done = await toggleSetComplete(set.id);
     onComplete(done);
+  }
+
+  function fillSuggestion() {
+    if (!showSuggest) return;
+    setWeight(String(suggest.weight));
+    setReps(String(suggest.reps));
+    setRir(String(suggest.rir));
+    void updateSet(set.id, { weight: suggest.weight, reps: suggest.reps, rir: suggest.rir });
   }
 
   const Badge = (
@@ -502,7 +557,7 @@ function SetRow({
         <input
           inputMode="decimal"
           value={weight}
-          placeholder={ghost ? String(ghost.weight) : "0"}
+          placeholder={showSuggest ? String(suggest.weight) : ghost ? String(ghost.weight) : "0"}
           onChange={(e) => setWeight(e.target.value)}
           onBlur={() => void updateSet(set.id, { weight: parseFloat(weight) || 0 })}
           className="mono-num w-full border border-rule bg-card px-1.5 py-1.5 text-[15px] text-ink outline-none focus:border-ink placeholder:text-ink3/60"
@@ -510,7 +565,7 @@ function SetRow({
         <input
           inputMode="numeric"
           value={reps}
-          placeholder={ghost ? String(ghost.reps) : "0"}
+          placeholder={showSuggest ? String(suggest.reps) : ghost ? String(ghost.reps) : "0"}
           onChange={(e) => setReps(e.target.value)}
           onBlur={() => void updateSet(set.id, { reps: parseInt(reps, 10) || 0 })}
           className="mono-num w-full border border-rule bg-card px-1.5 py-1.5 text-[15px] text-ink outline-none focus:border-ink placeholder:text-ink3/60"
@@ -518,25 +573,18 @@ function SetRow({
         <input
           inputMode="numeric"
           value={rir}
-          placeholder={ghost?.rir != null ? String(ghost.rir) : "–"}
+          placeholder={showSuggest ? String(suggest.rir) : ghost?.rir != null ? String(ghost.rir) : "–"}
           onChange={(e) => setRir(e.target.value)}
           onBlur={() => void updateSet(set.id, { rir: rir.trim() === "" ? undefined : parseInt(rir, 10) || 0 })}
           className={`mono-num w-full border border-rule bg-card px-1 py-1.5 text-center text-[14px] font-semibold outline-none focus:border-ink placeholder:text-ink3/50 ${rirColorClass(rirVal)}`}
         />
         {ghost ? (
-          <button
-            type="button"
-            aria-label={`${t("Last")} ${ghost.weight}×${ghost.reps}`}
-            onClick={() => {
-              setWeight(String(ghost.weight));
-              setReps(String(ghost.reps));
-              void updateSet(set.id, { weight: ghost.weight, reps: ghost.reps });
-            }}
-            className="text-right leading-none"
-          >
-            <span className="mono-num block text-[10px] text-ink3">{ghost.weight} ×</span>
-            <span className="block text-[9px] font-semibold uppercase tracking-[0.06em] text-ink3">{t("prev")}</span>
-          </button>
+          <span className="text-right leading-tight">
+            <span className="mono-num block text-[11px] text-ink2">{ghost.weight}×{ghost.reps}</span>
+            <span className="block text-[9px] font-semibold text-ink3">
+              {ghost.rir != null ? `${ghost.rir} RIR` : " "}
+            </span>
+          </span>
         ) : (
           <span className="text-right text-ink3/40">·</span>
         )}
@@ -555,7 +603,28 @@ function SetRow({
           )}
         </button>
       </div>
-      {active && <PlateStrip total={parseFloat(weight) || 0} />}
+      {active && showSuggest ? (
+        <button
+          type="button"
+          onClick={fillSuggestion}
+          className="-mx-[22px] mb-1.5 flex w-[calc(100%+44px)] items-center justify-between gap-2 bg-accentSoft/50 px-[22px] py-2 active:bg-accentSoft"
+        >
+          <span className="flex items-center gap-1.5">
+            <Sparkles size={11} strokeWidth={2.25} className="text-accent" />
+            <span className="text-[9px] font-bold uppercase tracking-[0.12em] text-ink2">{t("Suggested")}</span>
+          </span>
+          <span className="mono-num text-[13px] font-bold text-ink">
+            {suggest.weight}
+            <span className="ml-0.5 text-[10px] font-semibold text-ink3">{unit}</span>
+            <span className="mx-1">×</span>
+            {suggest.reps}
+            <span className="ml-1.5 text-[10px] font-semibold text-ink3">@ {suggest.rir} RIR</span>
+          </span>
+          <span className="text-[9px] font-bold uppercase tracking-[0.1em] text-accent">
+            {t(SUGGEST_REASON_KEY[suggest.reason])}
+          </span>
+        </button>
+      ) : null}
     </>
   );
 }

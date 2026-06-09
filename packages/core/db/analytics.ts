@@ -79,7 +79,13 @@ export async function exerciseE1RMSeries(exerciseId: ID): Promise<Point[]> {
  * the active-workout view — replaces N calls to `lastCompletedSets`, each of
  * which re-scans the session history.
  */
-export async function lastWorkingSetsByExercise(excludeSessionId: ID): Promise<Map<ID, WorkoutSet[]>> {
+export interface LastPerformance {
+  /** Date of the most recent finished session that trained the exercise. */
+  date: number;
+  sets: WorkoutSet[];
+}
+
+export async function lastWorkingSetsByExercise(excludeSessionId: ID): Promise<Map<ID, LastPerformance>> {
   const sessions = (await finishedSessions())
     .filter((s) => s.id !== excludeSessionId)
     .sort((a, b) => b.date - a.date); // newest first
@@ -90,15 +96,44 @@ export async function lastWorkingSetsByExercise(excludeSessionId: ID): Promise<M
     arr.push(sx);
     sxsBySession.set(sx.sessionId, arr);
   }
-  const out = new Map<ID, WorkoutSet[]>();
+  const out = new Map<ID, LastPerformance>();
   for (const session of sessions) {
     for (const sx of sxsBySession.get(session.id) ?? []) {
       if (!sx.exerciseId || out.has(sx.exerciseId)) continue; // first (newest) wins
       const sets = (byId.get(sx.id) ?? [])
         .filter((s) => s.isCompleted && s.kind === "working")
         .sort((a, b) => a.order - b.order);
-      if (sets.length) out.set(sx.exerciseId, sets);
+      if (sets.length) out.set(sx.exerciseId, { date: session.date, sets });
     }
+  }
+  return out;
+}
+
+export interface ExerciseHistoryEntry {
+  sessionId: ID;
+  date: number;
+  sets: WorkoutSet[];
+  bestE1RM: number;
+}
+
+/** Recent finished sessions that trained the exercise (newest first) with their completed working sets. */
+export async function exerciseSessionHistory(exerciseId: ID, limit = 10): Promise<ExerciseHistoryEntry[]> {
+  const sessions = (await finishedSessions()).sort((a, b) => b.date - a.date);
+  const { sxs, byId } = await setsBySessionExercise(sessions.map((s) => s.id));
+  const sxBySession = new Map<ID, (typeof sxs)[number]>();
+  for (const sx of sxs) if (sx.exerciseId === exerciseId) sxBySession.set(sx.sessionId, sx);
+
+  const out: ExerciseHistoryEntry[] = [];
+  for (const session of sessions) {
+    const sx = sxBySession.get(session.id);
+    if (!sx) continue;
+    const sets = (byId.get(sx.id) ?? [])
+      .filter((s) => s.isCompleted && s.kind === "working")
+      .sort((a, b) => a.order - b.order);
+    if (!sets.length) continue;
+    const best = Math.max(...sets.map((s) => OneRM.epley(s.weight, s.reps)));
+    out.push({ sessionId: session.id, date: session.date, sets, bestE1RM: Math.round(best * 10) / 10 });
+    if (out.length >= limit) break;
   }
   return out;
 }
