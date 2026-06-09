@@ -8,9 +8,11 @@ import {
   addSet, discardSession, finishSession, toggleSetComplete, updateSet,
 } from "@core/db/mutations";
 import { bestE1RMByExercise, lastWorkingSetsByExercise } from "@core/db/analytics";
-import { muscleRecovery } from "@core/db/recovery";
+import { getRecoverySettings, muscleRecovery } from "@core/db/recovery";
+import { Recovery } from "@core/calc/recovery";
 import type { Exercise, ID, WorkoutSet } from "@core/models/types";
 import type { MuscleGroup, SetKind } from "@core/models/enums";
+import { MUSCLE_I18N_KEY } from "@core/models/enums";
 import { STANDARD_KG_PLATES, STANDARD_LB_PLATES, plates } from "@core/calc/plate";
 import { supersetBadge } from "@core/superset";
 import { formatDuration, localizedExerciseName, weightUnit } from "@app/lib/format";
@@ -56,6 +58,9 @@ export function ActiveWorkout() {
     });
 
   const session = useLiveQuery(() => db.sessions.get(sessionId), [sessionId]);
+  // Below this recovery %, the volume-cap warning arms for a muscle's blocks.
+  const capLine =
+    useLiveQuery(() => getRecoverySettings(), [])?.mostlyRecoveredThreshold ?? 70;
   const blocks = useLiveQuery(
     async (): Promise<Block[]> => {
       const sess = await db.sessions.get(sessionId);
@@ -170,6 +175,15 @@ export function ActiveWorkout() {
           const isCurrent = bi === currentIndex;
           const activeSetId = isCurrent ? b.sets.find((s) => !s.isCompleted)?.id : undefined;
           const badge = supersetBadge(blocks.map((x) => ({ supersetGroupId: x.supersetGroupId })), bi);
+          // Volume-cap guard: sets a fatigued muscle can absorb vs the plan.
+          const workingDone = b.sets.filter((s) => s.isCompleted && s.kind === "working").length;
+          const plannedSets = b.target?.sets ?? b.sets.filter((s) => s.kind === "working").length;
+          const setCap =
+            b.recovery && b.recovery.pct < capLine
+              ? Recovery.recommendedSetCap(plannedSets, b.recovery.pct, capLine)
+              : null;
+          const showCapWarning =
+            setCap != null && workingDone >= setCap && b.sets.some((s) => !s.isCompleted);
           return (
             <section key={b.sxId}>
               {/* Exercise header bar — peach when current */}
@@ -231,6 +245,17 @@ export function ActiveWorkout() {
               {b.exercise?.userNotes && openCues.has(b.sxId) ? (
                 <p className="mx-[22px] mb-2 border-l-2 border-warn bg-warn/10 px-2.5 py-1.5 text-[13px] leading-relaxed text-ink2 whitespace-pre-line">
                   {b.exercise.userNotes}
+                </p>
+              ) : null}
+
+              {/* Volume-cap warning for fatigued muscles (iOS parity) */}
+              {showCapWarning && b.exercise ? (
+                <p className="mx-[22px] mb-2 border-l-2 border-warn bg-warn/10 px-2.5 py-1.5 text-[12px] leading-relaxed text-ink">
+                  {t("{{muscle}} is at {{pct}}% — consider stopping at {{cap}} working sets today.", {
+                    muscle: t(MUSCLE_I18N_KEY[b.exercise.muscleGroup]),
+                    pct: b.recovery!.pct,
+                    cap: setCap,
+                  })}
                 </p>
               ) : null}
 

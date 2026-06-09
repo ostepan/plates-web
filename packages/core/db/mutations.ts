@@ -4,9 +4,10 @@
 import { db } from "./db";
 import type {
   BodyWeightEntry, Exercise, ID, Mesocycle, Microcycle, MuscleVolumeTarget, Program, ProgramDay,
-  Routine, RoutineExercise, Session, SessionExercise, WorkoutSet,
+  RecoverySettings, Routine, RoutineExercise, Session, SessionExercise, WorkoutSet,
 } from "../models/types";
 import type { Equipment, Mechanic, MuscleGroup, ProgressionRule, SetKind, WeightUnit } from "../models/enums";
+import { RECOVERY_SETTINGS_DEFAULTS } from "../calc/recovery";
 
 const newId = (): ID => crypto.randomUUID();
 const now = (): number => Date.now();
@@ -645,6 +646,49 @@ export async function saveRecoveryCheckIn(input: RecoveryCheckInInput): Promise<
     await db.recoveryFactors.update(existing.id, { ...fields, updatedAt: t });
   } else {
     await db.recoveryFactors.add({ id: newId(), date, ...fields, createdAt: t, updatedAt: t });
+  }
+}
+
+// ---- Recovery settings ----------------------------------------------------
+
+/** The RecoverySettings singleton, created with app defaults on first access. */
+export async function getOrCreateRecoverySettings(): Promise<RecoverySettings> {
+  return db.transaction("rw", db.recoverySettings, async () => {
+    const existing = (await db.recoverySettings.toArray())[0];
+    if (existing) return existing;
+    const t = now();
+    const row: RecoverySettings = {
+      id: newId(),
+      ...RECOVERY_SETTINGS_DEFAULTS,
+      notificationsEnabled: false,
+      customRecoveryTimes: {},
+      createdAt: t,
+      updatedAt: t,
+    };
+    await db.recoverySettings.add(row);
+    return row;
+  });
+}
+
+export async function updateRecoverySettings(
+  patch: Partial<Omit<RecoverySettings, "id" | "createdAt" | "updatedAt">>,
+): Promise<void> {
+  const s = await getOrCreateRecoverySettings();
+  await db.recoverySettings.update(s.id, { ...patch, updatedAt: now() });
+}
+
+/**
+ * "Mark as Ready" override: wipes the muscle's accumulated fatigue as of now.
+ * Training the muscle again deposits fresh fatigue on top (the read side only
+ * counts sessions after the override timestamp).
+ */
+export async function markMuscleReady(muscleGroup: MuscleGroup): Promise<void> {
+  const t = now();
+  const existing = await db.muscleRecoveryStatus.where("muscleGroup").equals(muscleGroup).first();
+  if (existing) {
+    await db.muscleRecoveryStatus.update(existing.id, { recoveryPercentage: 100, lastTrainedDate: t, updatedAt: t });
+  } else {
+    await db.muscleRecoveryStatus.add({ id: newId(), muscleGroup, recoveryPercentage: 100, updatedAt: t });
   }
 }
 

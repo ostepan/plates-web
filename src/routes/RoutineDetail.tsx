@@ -4,7 +4,7 @@ import { useTranslation } from "react-i18next";
 import { Activity, ArrowLeftRight, ChevronLeft, Pencil, Play } from "lucide-react";
 import { db } from "@core/db/db";
 import { startSessionFromRoutine, updateRoutineExercise } from "@core/db/mutations";
-import { getSwapSuggestions, muscleRecovery } from "@core/db/recovery";
+import { getRecoverySettings, getSwapSuggestions, muscleRecovery } from "@core/db/recovery";
 import { MUSCLE_I18N_KEY } from "@core/models/enums";
 import { supersetBadge } from "@core/superset";
 import { IronTopBar, IronToolbarButton } from "@ui/components/IronTopBar";
@@ -31,9 +31,11 @@ export function RoutineDetail() {
     const exs = (await db.exercises.bulkGet(res.map((r) => r.exerciseId))).filter((e) => !!e);
     const muscles = [...new Set(exs.map((e) => e!.muscleGroup))];
     if (!muscles.length) return null;
+    const settings = await getRecoverySettings();
+    const line = settings.partiallyRecoveredThreshold;
     const recMap = new Map((await muscleRecovery()).map((r) => [r.muscleGroup, r.recoveryPercentage]));
     const pcts = muscles.map((m) => recMap.get(m) ?? 100); // untrained = recovered
-    const readyCount = pcts.filter((p) => p >= 50).length;
+    const readyCount = pcts.filter((p) => p >= line).length;
     const total = muscles.length;
     const avg = pcts.reduce((a, b) => a + b, 0) / total;
     const ratio = readyCount / total;
@@ -41,8 +43,8 @@ export function RoutineDetail() {
     const notRecommended = ratio < 0.34;
     if (notRecommended) { label = "Not recommended"; color = "text-bad"; bg = "bg-bad"; }
     else if (ratio < 0.67) { label = "Consider modifying"; color = "text-warn"; bg = "bg-warn"; }
-    else if (avg < 90) { label = "Mostly ready"; color = "text-ok"; }
-    return { label, color, bg, readyCount, total, notRecommended };
+    else if (avg < settings.readyThreshold) { label = "Mostly ready"; color = "text-ok"; }
+    return { label, color, bg, readyCount, total, notRecommended, line };
   }, [id]);
 
   const swaps = useLiveQuery(() => getSwapSuggestions(id), [id], []);
@@ -112,7 +114,7 @@ export function RoutineDetail() {
             </div>
             <p className="mono-num text-right text-[12px] leading-tight text-ink3">
               {verdict.readyCount}/{verdict.total}
-              <br />≥50%
+              <br />≥{verdict.line}%
             </p>
           </div>
         )}

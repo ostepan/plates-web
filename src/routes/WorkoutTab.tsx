@@ -1,12 +1,12 @@
 import { useLiveQuery } from "dexie-react-hooks";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { CalendarDays, Pencil, Play, Plus, Trash2, Zap } from "lucide-react";
+import { CalendarDays, ClipboardCheck, Pencil, Play, Plus, Trash2, Zap } from "lucide-react";
 import { db } from "@core/db/db";
 import { createRoutine, deleteRoutine, startProgramDay, startQuickWorkout, unfinishedSession } from "@core/db/mutations";
 import { activeProgramToday, programOwnedRoutineIds } from "@core/db/queries";
 import { overviewStats } from "@core/db/analytics";
-import { muscleRecovery } from "@core/db/recovery";
+import { getRecoverySettings, muscleRecovery, todayFactors } from "@core/db/recovery";
 import { MUSCLE_I18N_KEY } from "@core/models/enums";
 import { IronTopBar, IronToolbarButton } from "@ui/components/IronTopBar";
 import { IronEmptyState } from "@ui/components/IronEmptyState";
@@ -37,9 +37,13 @@ export function WorkoutTab() {
       const today = await activeProgramToday();
       const stats = await overviewStats();
       const open = await unfinishedSession();
-      // muscleRecovery() is sorted fatigued-first, so the first <50% row is the worst.
-      const worst = (await muscleRecovery()).find((r) => r.recoveryPercentage < 50) ?? null;
-      return { routines, today, streak: stats.streakDays, open, worst };
+      const settings = await getRecoverySettings();
+      // muscleRecovery() is sorted fatigued-first, so the first fatigued row is the worst.
+      const worst =
+        (await muscleRecovery()).find((r) => r.recoveryPercentage < settings.partiallyRecoveredThreshold) ?? null;
+      // Nudge a daily check-in once the habit exists (stale factors decay to neutral).
+      const needsCheckIn = !(await todayFactors()) && (await db.recoveryFactors.count()) > 0;
+      return { routines, today, streak: stats.streakDays, open, worst, needsCheckIn };
     },
     [],
     undefined,
@@ -174,6 +178,19 @@ export function WorkoutTab() {
               <b>{t(MUSCLE_I18N_KEY[data.worst.muscleGroup])}</b> · <b>{Math.round(data.worst.recoveryPercentage)}%</b> — {t("load may auto-hold")}.
             </span>
             <span className="eyebrow shrink-0 text-[10px] text-ink2">{t("Details")} →</span>
+          </button>
+        )}
+
+        {/* Daily check-in nudge — keeps the factors multiplier fresh */}
+        {data?.needsCheckIn && (
+          <button
+            type="button"
+            onClick={() => navigate("/recovery?seg=checkin")}
+            className="mx-[22px] mt-3 flex w-[calc(100%-44px)] items-center gap-2.5 border border-rule bg-card px-3.5 py-2.5 text-left active:bg-chip"
+          >
+            <ClipboardCheck size={15} strokeWidth={2.25} className="shrink-0 text-ink3" />
+            <span className="flex-1 text-[12px] text-ink2">{t("No check-in today — log it to keep recovery accurate.")}</span>
+            <span className="eyebrow shrink-0 text-[10px] text-accent">{t("Check in")} →</span>
           </button>
         )}
 

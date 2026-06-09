@@ -27,6 +27,11 @@ export interface SuggestOptions {
   increment: number;
   /** Routine target weight, used to seed a suggestion when there is no history. */
   fallbackWeight?: number;
+  /**
+   * Recovery guard: when the muscle is under-recovered, don't propose an
+   * advance (weight or reps) — repeat last session's working numbers instead.
+   */
+  holdProgress?: boolean;
 }
 
 const round2 = (n: number): number => +n.toFixed(2);
@@ -51,6 +56,10 @@ export function suggestNextSet(opts: SuggestOptions): SetSuggestion | undefined 
   const repMin = opts.repMin ?? last.reps;
   const repMax = opts.repMax ?? last.reps + 2;
   const lastRIR = last.rir ?? targetRIR;
+
+  if (opts.holdProgress) {
+    return { weight: last.weight, reps: last.reps, rir: targetRIR, reason: "hold" };
+  }
 
   if (last.reps >= repMax && lastRIR >= targetRIR) {
     return { weight: round2(last.weight + increment), reps: repMin, rir: targetRIR, reason: "progress" };
