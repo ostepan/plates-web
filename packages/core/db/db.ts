@@ -55,7 +55,7 @@ export class PlatesDB extends Dexie {
     });
 
     // v2 → v3 heal + harden the exercise library against double-seeding.
-    // A non-atomic count-then-insert in `seed.ts` could insert the ~165
+    // A non-atomic count-then-insert in `seed.ts` could insert the full set of
     // exercises twice (React StrictMode double-invokes the seeding effect),
     // leaving duplicate rows. v2 deletes any such duplicates — keeping the
     // first row per `nameKey` — so that v3 can build a *unique* `nameKey`
