@@ -316,7 +316,7 @@ export function ActiveWorkout() {
                     key={s.id}
                     set={s}
                     index={i}
-                    ghost={b.ghost[i]}
+                    ghost={b.ghost[i] ?? b.ghost.at(-1)}
                     suggest={b.suggestions[i]}
                     active={s.id === activeSetId}
                     onComplete={(done) => done && rest.start(b.restSeconds)}
@@ -442,8 +442,20 @@ function SetRow({
 }) {
   const { t } = useTranslation();
   const unit = weightUnit();
-  const [weight, setWeight] = useState(set.weight ? String(set.weight) : "");
-  const [reps, setReps] = useState(set.reps ? String(set.reps) : "");
+  // Smart autotype: pre-fill from the progression suggestion (falls back to the
+  // last session's matching set) so a pending row is loggable with a single tap;
+  // persisted on blur/complete as before. Warm-ups follow their own loading.
+  const prefill = set.kind !== "warmup" ? suggest : undefined;
+  const [weight, setWeight] = useState(
+    set.weight ? String(set.weight)
+    : prefill?.weight ? String(prefill.weight)
+    : ghost?.weight ? String(ghost.weight) : "",
+  );
+  const [reps, setReps] = useState(
+    set.reps ? String(set.reps)
+    : prefill?.reps ? String(prefill.reps)
+    : ghost?.reps ? String(ghost.reps) : "",
+  );
   const [rir, setRir] = useState(set.rir != null ? String(set.rir) : "");
   const [menu, setMenu] = useState(false);
 
