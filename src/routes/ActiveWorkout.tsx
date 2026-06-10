@@ -24,6 +24,8 @@ interface Block {
   exercise?: Exercise;
   sets: WorkoutSet[];
   ghost: WorkoutSet[];
+  /** Last session's working set lined up with each of today's rows (none for warm-ups). */
+  ghostRows: (WorkoutSet | undefined)[];
   lastDate?: number;
   suggestions: (SetSuggestion | undefined)[];
   restSeconds: number;
@@ -95,9 +97,19 @@ export function ActiveWorkout() {
           const pct = exercise ? recByMuscle.get(exercise.muscleGroup) : undefined;
           // Smart auto-type: hold progression while the muscle is under-recovered.
           const holdProgress = pct != null && pct < settings.mostlyRecoveredThreshold;
+          // Ghosts are last session's *working* sets, so line them up with
+          // today's rows by working position — warm-up rows would otherwise
+          // shift every pairing and inherit full working weights themselves.
+          let workingIdx = 0;
+          const ghostRows = sets.map((s): WorkoutSet | undefined => {
+            if (s.kind === "warmup") return undefined;
+            const g = ghost.length ? ghost[Math.min(workingIdx, ghost.length - 1)] : undefined;
+            workingIdx += 1;
+            return g;
+          });
           const suggestions = sets.map((s, i) => {
-            if (s.isCompleted) return undefined;
-            const basis = ghost.length ? ghost[Math.min(i, ghost.length - 1)] : undefined;
+            if (s.isCompleted || s.kind === "warmup") return undefined;
+            const basis = ghostRows[i];
             return suggestNextSet({
               last: basis ? { weight: basis.weight, reps: basis.reps, rir: basis.rir } : undefined,
               repMin: re?.targetRepsMin,
@@ -109,7 +121,7 @@ export function ActiveWorkout() {
             });
           });
           return {
-            sxId: sx.id, exercise, sets, ghost,
+            sxId: sx.id, exercise, sets, ghost, ghostRows,
             lastDate: last?.date,
             suggestions,
             restSeconds: exercise?.defaultRestSeconds ?? 120,
@@ -318,7 +330,7 @@ export function ActiveWorkout() {
                     key={s.id}
                     set={s}
                     index={i}
-                    ghost={b.ghost[i] ?? b.ghost.at(-1)}
+                    ghost={b.ghostRows[i]}
                     suggest={b.suggestions[i]}
                     active={s.id === activeSetId}
                     onComplete={(done) => done && rest.start(b.restSeconds)}
@@ -443,6 +455,8 @@ const SUGGEST_REASON_KEY: Record<SetSuggestion["reason"], string> = {
   progress: "Add weight",
   addRep: "+1 rep",
   hold: "Repeat",
+  backOff: "Back off",
+  start: "Routine target",
 };
 
 function SetRow({
