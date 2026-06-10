@@ -187,6 +187,11 @@ export interface OverviewStats {
   totalVolume: number;
   totalSets: number;
   streakDays: number;
+  bestStreakDays: number;
+  weekSessions: number;
+  monthSessions: number;
+  avgDurationMin: number;
+  daysPerWeek: number;
 }
 
 export async function overviewStats(): Promise<OverviewStats> {
@@ -206,7 +211,40 @@ export async function overviewStats(): Promise<OverviewStats> {
     cursor -= DAY;
   }
 
-  return { workouts: sessions.length, totalVolume, totalSets, streakDays: streak };
+  // best streak ever — longest run of consecutive workout days
+  const sortedDays = [...days].sort((a, b) => a - b);
+  let bestStreak = 0;
+  let run = 0;
+  let prevDay = Number.NaN;
+  for (const d of sortedDays) {
+    run = d - prevDay === DAY ? run + 1 : 1;
+    prevDay = d;
+    if (run > bestStreak) bestStreak = run;
+  }
+
+  const now = Date.now();
+  const weekSessions = sessions.filter((s) => s.date >= now - 7 * DAY).length;
+  const monthSessions = sessions.filter((s) => s.date >= now - 30 * DAY).length;
+  const avgDurationMin = sessions.length
+    ? Math.round(sessions.reduce((v, s) => v + s.durationSeconds, 0) / sessions.length / 60)
+    : 0;
+  // training days per week, averaged over the span from first workout to today
+  const spanWeeks = sortedDays.length
+    ? Math.max(1, (dayStart(now) - sortedDays[0]) / DAY + 1) / 7
+    : 1;
+  const daysPerWeek = sortedDays.length ? Math.round((sortedDays.length / spanWeeks) * 10) / 10 : 0;
+
+  return {
+    workouts: sessions.length,
+    totalVolume,
+    totalSets,
+    streakDays: streak,
+    bestStreakDays: bestStreak,
+    weekSessions,
+    monthSessions,
+    avgDurationMin,
+    daysPerWeek,
+  };
 }
 
 /** Per-day workout counts for a heatmap, oldest→newest, covering `weeks`. */
@@ -228,8 +266,11 @@ export async function consistency(weeks = 12): Promise<{ date: number; count: nu
 
 export interface PR {
   exerciseId: ID;
+  sessionId: ID;
   date: number;
   e1rm: number;
+  /** Previous best e1RM (0 when this is the first record for the exercise). */
+  prevE1rm: number;
 }
 
 /** Chronological list of e1RM personal records across all exercises (newest first). */
@@ -254,9 +295,55 @@ export async function prTimeline(): Promise<PR[]> {
       const prev = best.get(sx.exerciseId) ?? 0;
       if (e1rm > prev + 0.01) {
         best.set(sx.exerciseId, e1rm);
-        prs.push({ exerciseId: sx.exerciseId, date: session.date, e1rm: Math.round(e1rm * 10) / 10 });
+        prs.push({
+          exerciseId: sx.exerciseId,
+          sessionId: session.id,
+          date: session.date,
+          e1rm: Math.round(e1rm * 10) / 10,
+          prevE1rm: Math.round(prev * 10) / 10,
+        });
       }
     }
   }
   return prs.reverse();
+}
+
+export interface HistoryRow {
+  id: ID;
+  date: number;
+  name: string;
+  durationSeconds: number;
+  volume: number;
+  /** Completed working sets. */
+  sets: number;
+  /** e1RM personal records set in this session. */
+  prs: number;
+  notes: string;
+}
+
+/** Finished sessions (newest first) with set counts + PR counts for the history list. */
+export async function historyRows(): Promise<HistoryRow[]> {
+  const sessions = await finishedSessions();
+  const { sxs, byId } = await setsBySessionExercise(sessions.map((s) => s.id));
+  const setsBySession = new Map<ID, number>();
+  for (const sx of sxs) {
+    const working = (byId.get(sx.id) ?? []).filter((s) => s.isCompleted && s.kind === "working").length;
+    setsBySession.set(sx.sessionId, (setsBySession.get(sx.sessionId) ?? 0) + working);
+  }
+  const prsBySession = new Map<ID, number>();
+  for (const pr of await prTimeline()) {
+    prsBySession.set(pr.sessionId, (prsBySession.get(pr.sessionId) ?? 0) + 1);
+  }
+  return sessions
+    .map((s) => ({
+      id: s.id,
+      date: s.date,
+      name: s.routineNameSnapshot,
+      durationSeconds: s.durationSeconds,
+      volume: s.totalVolume,
+      sets: setsBySession.get(s.id) ?? 0,
+      prs: prsBySession.get(s.id) ?? 0,
+      notes: s.notes,
+    }))
+    .reverse();
 }
