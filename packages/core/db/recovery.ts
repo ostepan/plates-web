@@ -1,10 +1,12 @@
 import { db } from "./db";
 import type { Exercise, ID, RecoveryFactors, RecoverySettings } from "../models/types";
 import type { MuscleGroup } from "../models/enums";
+import { DETAIL_PARENT, type DetailedMuscle } from "../models/muscles";
 import {
-  RECOVERY_SETTINGS_DEFAULTS, Recovery, overallRecoveryScore,
+  BASE_RECOVERY, RECOVERY_SETTINGS_DEFAULTS, Recovery, overallRecoveryScore,
   type FatigueImpulse, type RecoveryResult, type RecoveryThresholds, type RecoveryVerdict,
 } from "../calc/recovery";
+import { DETAIL_BASE_RECOVERY, detailCredits } from "../calc/muscleDetail";
 
 const DAY = 86_400_000;
 const dayStart = (ts: number) => Math.floor(ts / DAY) * DAY;
@@ -110,20 +112,25 @@ export async function factorTrends(
   };
 }
 
+interface ImpulseMaps {
+  byGroup: Map<MuscleGroup, FatigueImpulse[]>;
+  byDetail: Map<DetailedMuscle, FatigueImpulse[]>;
+}
+
 /**
- * Per-muscle fatigue impulses from finished sessions in the trailing window.
- * Working-set counts credit the exercise's primary muscle in full and each
- * secondary muscle at `secondaryImpact`; RPE is the set-weighted mean of the
- * session's logged RPE/RIR for that muscle (default 7 when nothing is logged).
+ * Per-muscle fatigue impulses from finished sessions in the trailing window,
+ * at both granularities. Working-set counts credit the exercise's primary
+ * muscle group in full and each secondary group at `secondaryImpact`; within
+ * each credited group the sets fan out to its detail heads per the exercise's
+ * `detailCredits` split (dominant head = full credit). RPE is the set-weighted
+ * mean of the session's logged RPE/RIR for that muscle (default 7 when nothing
+ * is logged).
  */
-async function fatigueImpulses(
-  secondaryImpact: number,
-  since: number,
-): Promise<Map<MuscleGroup, FatigueImpulse[]>> {
+async function fatigueImpulses(secondaryImpact: number, since: number): Promise<ImpulseMaps> {
   const sessions = (await db.sessions.where("date").aboveOrEqual(since).toArray()).filter(
     (s) => s.durationSeconds > 0,
   );
-  if (!sessions.length) return new Map();
+  if (!sessions.length) return { byGroup: new Map(), byDetail: new Map() };
 
   const exById = new Map<ID, Exercise>((await db.exercises.toArray()).map((e) => [e.id, e]));
   const sxs = await db.sessionExercises.where("sessionId").anyOf(sessions.map((s) => s.id)).toArray();
@@ -132,7 +139,10 @@ async function fatigueImpulses(
   const dateBySession = new Map(sessions.map((s) => [s.id, s.date]));
 
   // (sessionId, muscle) → { sets, rpeWeight, rpeSets }
-  const acc = new Map<string, { muscle: MuscleGroup; date: number; sets: number; rpeSum: number; rpeSets: number }>();
+  interface Acc { date: number; sets: number; rpeSum: number; rpeSets: number }
+  const groupAcc = new Map<string, Acc & { muscle: MuscleGroup }>();
+  const detailAcc = new Map<string, Acc & { muscle: DetailedMuscle }>();
+
   for (const set of sets) {
     if (!set.isCompleted || set.kind !== "working") continue;
     const sx = sxById.get(set.sessionExerciseId);
@@ -141,7 +151,7 @@ async function fatigueImpulses(
     if (!sx || !ex || date === undefined) continue;
     const rpe = set.rpe ?? (set.rir != null ? 10 - set.rir : undefined);
 
-    const credit = (muscle: MuscleGroup, weight: number) => {
+    const tally = <M extends string>(acc: Map<string, Acc & { muscle: M }>, muscle: M, weight: number) => {
       const key = `${sx.sessionId}|${muscle}`;
       const a = acc.get(key) ?? { muscle, date, sets: 0, rpeSum: 0, rpeSets: 0 };
       a.sets += weight;
@@ -151,18 +161,26 @@ async function fatigueImpulses(
       }
       acc.set(key, a);
     };
+    const credit = (group: MuscleGroup, weight: number) => {
+      tally(groupAcc, group, weight);
+      const splits = Object.entries(detailCredits(`${ex.nameKey} ${ex.nameEN}`, group)) as [DetailedMuscle, number][];
+      for (const [d, w] of splits) tally(detailAcc, d, weight * w);
+    };
     credit(ex.muscleGroup, 1);
     if (secondaryImpact > 0) for (const m of ex.secondary) credit(m, secondaryImpact);
   }
 
-  const out = new Map<MuscleGroup, FatigueImpulse[]>();
-  for (const a of acc.values()) {
-    if (a.sets <= 0) continue;
-    const arr = out.get(a.muscle) ?? [];
-    arr.push({ trainedAt: a.date, sets: a.sets, rpe: a.rpeSets > 0 ? a.rpeSum / a.rpeSets : undefined });
-    out.set(a.muscle, arr);
-  }
-  return out;
+  const collect = <M extends string>(acc: Map<string, Acc & { muscle: M }>): Map<M, FatigueImpulse[]> => {
+    const out = new Map<M, FatigueImpulse[]>();
+    for (const a of acc.values()) {
+      if (a.sets <= 0) continue;
+      const arr = out.get(a.muscle) ?? [];
+      arr.push({ trainedAt: a.date, sets: a.sets, rpe: a.rpeSets > 0 ? a.rpeSum / a.rpeSets : undefined });
+      out.set(a.muscle, arr);
+    }
+    return out;
+  };
+  return { byGroup: collect(groupAcc), byDetail: collect(detailAcc) };
 }
 
 /**
@@ -171,12 +189,35 @@ async function fatigueImpulses(
  * "Mark as Ready" overrides, and applies the user's thresholds and deload window.
  */
 export async function muscleRecovery(): Promise<MuscleRecovery[]> {
+  const { rows } = await computeRecovery();
+  return rows;
+}
+
+export interface DetailedMuscleRecovery extends MuscleRecovery {
+  /** The specific head; `muscleGroup` carries its parent group. */
+  detail: DetailedMuscle;
+}
+
+/**
+ * Per-detail-head recovery (front/side/rear delts, lats vs lower back, …),
+ * fatigued-first. Same model and inputs as `muscleRecovery`, but each group's
+ * sets fan out to its heads via the per-exercise `detailCredits` split, and
+ * each head decays with its own base time. A custom recovery time set for the
+ * parent group rescales all of its heads proportionally; "Mark as Ready" on
+ * the group clears its heads too.
+ */
+export async function detailedMuscleRecovery(): Promise<DetailedMuscleRecovery[]> {
+  const { details } = await computeRecovery();
+  return details;
+}
+
+async function computeRecovery(): Promise<{ rows: MuscleRecovery[]; details: DetailedMuscleRecovery[] }> {
   const now = Date.now();
   const settings = await getRecoverySettings();
   const thresholds = thresholdsOf(settings);
 
   const impulses = await fatigueImpulses(settings.secondaryMuscleImpact, now - IMPULSE_WINDOW_DAYS * DAY);
-  if (!impulses.size) return [];
+  if (!impulses.byGroup.size) return { rows: [], details: [] };
 
   const factors = await latestFactors();
   const profile = (await db.userProfile.toArray())[0];
@@ -190,31 +231,50 @@ export async function muscleRecovery(): Promise<MuscleRecovery[]> {
     (await db.muscleRecoveryStatus.toArray()).map((s) => [s.muscleGroup, s.updatedAt]),
   );
 
-  const out: MuscleRecovery[] = [];
-  for (const [mg, all] of impulses) {
-    const cutoff = overrideAt.get(mg);
+  const compute = (group: MuscleGroup, all: FatigueImpulse[], baseRecoverySeconds?: number): MuscleRecovery => {
+    const cutoff = overrideAt.get(group);
     const active = cutoff ? all.filter((i) => i.trainedAt > cutoff) : all;
     const r = Recovery.calculateRecovery({
-      muscleGroup: mg,
+      muscleGroup: group,
       impulses: active,
       factors: factors ?? null,
       factorsAgeHours: factors ? Math.max(0, (now - factors.date) / 3_600_000) : 0,
       userAge: profile?.age ?? null,
       customRecoveryTimes: settings.customRecoveryTimes,
+      baseRecoverySeconds,
       deloadMultiplier: deload,
       thresholds,
       now,
     });
     const lastTrainedAt = Math.max(...all.map((i) => i.trainedAt));
     const daysSinceTrained = Math.floor((now - lastTrainedAt) / DAY);
-    out.push({
+    return {
       ...r,
       lastTrainedAt,
       daysSinceTrained,
       verdict: Recovery.verdict(r.recoveryPercentage, daysSinceTrained, thresholds),
-    });
+    };
+  };
+
+  const rows: MuscleRecovery[] = [];
+  for (const [mg, all] of impulses.byGroup) rows.push(compute(mg, all));
+
+  const details: DetailedMuscleRecovery[] = [];
+  for (const [d, all] of impulses.byDetail) {
+    const r = compute(DETAIL_PARENT[d], all, detailBaseSeconds(d, settings.customRecoveryTimes));
+    details.push({ ...r, detail: d });
   }
-  return out.sort((a, b) => a.recoveryPercentage - b.recoveryPercentage);
+
+  const byPct = (a: MuscleRecovery, b: MuscleRecovery) => a.recoveryPercentage - b.recoveryPercentage;
+  return { rows: rows.sort(byPct), details: details.sort(byPct) };
+}
+
+/** Head base time, rescaled when the user customized the parent group's time. */
+function detailBaseSeconds(d: DetailedMuscle, customRecoveryTimes: Record<string, number>): number {
+  const parent = DETAIL_PARENT[d];
+  const custom = customRecoveryTimes[parent];
+  const scale = custom != null && BASE_RECOVERY[parent] ? custom / BASE_RECOVERY[parent] : 1;
+  return DETAIL_BASE_RECOVERY[d] * scale;
 }
 
 export interface MuscleHistoryPoint {
@@ -233,7 +293,7 @@ export async function muscleRecoveryDailyHistory(
   const now = Date.now();
   const settings = await getRecoverySettings();
   const since = dayStart(now) - (days - 1 + IMPULSE_WINDOW_DAYS) * DAY;
-  const impulses = (await fatigueImpulses(settings.secondaryMuscleImpact, since)).get(muscle) ?? [];
+  const impulses = (await fatigueImpulses(settings.secondaryMuscleImpact, since)).byGroup.get(muscle) ?? [];
   const profile = (await db.userProfile.toArray())[0];
 
   const out: MuscleHistoryPoint[] = [];

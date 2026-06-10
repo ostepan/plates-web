@@ -6,7 +6,7 @@ import {
   addExerciseToRoutine, createRoutine, finishSession, getOrCreateRecoverySettings, markMuscleReady,
   saveRecoveryCheckIn, startSessionFromRoutine, toggleSetComplete, updateRecoverySettings, updateSet,
 } from "./mutations";
-import { muscleRecovery, todayFactors } from "./recovery";
+import { detailedMuscleRecovery, muscleRecovery, todayFactors } from "./recovery";
 import type { ID } from "../models/types";
 
 let routineId: ID;
@@ -97,5 +97,31 @@ describe("recovery aggregation (M4)", () => {
     await logBenchSession(0); // training again (after the override) re-fatigues
     const after = (await muscleRecovery()).find((r) => r.muscleGroup === "chest")!;
     expect(after.recoveryPercentage).toBeLessThan(100);
+  });
+
+  it("breaks chest down into heads, with mid chest hit hardest by flat bench", async () => {
+    const details = await detailedMuscleRecovery();
+    const mid = details.find((d) => d.detail === "midChest")!;
+    const upper = details.find((d) => d.detail === "upperChest")!;
+    const lower = details.find((d) => d.detail === "lowerChest")!;
+    expect(mid.muscleGroup).toBe("chest");
+    expect(mid.recoveryPercentage).toBeLessThan(upper.recoveryPercentage);
+    expect(mid.recoveryPercentage).toBeLessThan(lower.recoveryPercentage);
+  });
+
+  it("credits bench's secondary shoulder work to the front delts, not the rear", async () => {
+    const details = await detailedMuscleRecovery();
+    const front = details.find((d) => d.detail === "frontDelts")!;
+    expect(front.muscleGroup).toBe("shoulders");
+    expect(front.recoveryPercentage).toBeLessThan(100);
+    expect(details.find((d) => d.detail === "rearDelts")).toBeUndefined();
+    // unsplit group → head mirrors the group
+    expect(details.find((d) => d.detail === "triceps")).toBeTruthy();
+  });
+
+  it("mark-as-ready on a group clears its detail heads too", async () => {
+    await markMuscleReady("shoulders");
+    const front = (await detailedMuscleRecovery()).find((d) => d.detail === "frontDelts")!;
+    expect(front.recoveryPercentage).toBe(100);
   });
 });

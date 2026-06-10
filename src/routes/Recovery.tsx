@@ -6,11 +6,13 @@ import { Brain, ChevronLeft, Flame, Moon, Settings, Utensils, Zap } from "lucide
 import type { LucideIcon } from "lucide-react";
 import { markMuscleReady, saveRecoveryCheckIn } from "@core/db/mutations";
 import {
-  factorTrends, getRecoverySettings, muscleRecovery, muscleRecoveryDailyHistory,
-  recoveryScoreHistory, todayFactors,
+  detailedMuscleRecovery, factorTrends, getRecoverySettings, muscleRecovery,
+  muscleRecoveryDailyHistory, recoveryScoreHistory, todayFactors,
+  type DetailedMuscleRecovery,
 } from "@core/db/recovery";
 import { overallRecoveryScore } from "@core/calc/recovery";
 import { MUSCLE_I18N_KEY, type MuscleGroup } from "@core/models/enums";
+import { DETAIL_I18N_KEY } from "@core/models/muscles";
 import type { RecoveryVerdict } from "@core/calc/recovery";
 import { IronTopBar, IronToolbarButton } from "@ui/components/IronTopBar";
 import { IronSegmented } from "@ui/components/IronSegmented";
@@ -78,13 +80,17 @@ export function Recovery() {
 function RecoveryStatus() {
   const { t } = useTranslation();
   const data = useLiveQuery(
-    async () => ({ rows: await muscleRecovery(), settings: await getRecoverySettings() }),
+    async () => ({
+      rows: await muscleRecovery(),
+      details: await detailedMuscleRecovery(),
+      settings: await getRecoverySettings(),
+    }),
     [],
     undefined,
   );
 
   if (data === undefined) return null;
-  const { rows, settings } = data;
+  const { rows, details, settings } = data;
   if (rows.length === 0) {
     return (
       <IronEmptyState
@@ -132,6 +138,10 @@ function RecoveryStatus() {
       <div className="grid grid-cols-2 gap-2 px-[22px] pt-2">
         {rows.map((r) => {
           const v = VERDICT[r.verdict];
+          // Detail heads of this group (front/side/rear delts, …), fatigued-first.
+          // A lone head that just mirrors the group card adds nothing — hide it.
+          const heads = details.filter((d) => d.muscleGroup === r.muscleGroup);
+          const showHeads = heads.length > 1 || (heads.length === 1 && heads[0].detail !== r.muscleGroup);
           return (
             <div key={r.muscleGroup} className="relative border border-rule bg-card px-3.5 py-3">
               <span className={`absolute bottom-0 left-0 top-0 w-[3px] ${v.bar}`} />
@@ -151,6 +161,13 @@ function RecoveryStatus() {
                   {r.isReady ? t("ready") : r.daysUntilReady <= 1 ? t("~1 day") : `~${r.daysUntilReady} ${t("days")}`}
                 </span>
               </div>
+              {showHeads && (
+                <div className="mt-2 border-t border-hairline pt-2">
+                  {heads.map((d) => (
+                    <DetailHeadRow key={d.detail} row={d} />
+                  ))}
+                </div>
+              )}
               {!r.isReady && (
                 <button
                   type="button"
@@ -164,6 +181,28 @@ function RecoveryStatus() {
           );
         })}
       </div>
+    </div>
+  );
+}
+
+/** Compact per-head line inside a muscle card: name, mini bar, %, ready ETA. */
+function DetailHeadRow({ row }: { row: DetailedMuscleRecovery }) {
+  const { t } = useTranslation();
+  const v = VERDICT[row.verdict];
+  return (
+    <div className="flex items-center gap-2 py-[3px]">
+      <span className="min-w-0 flex-1 truncate text-[10px] font-semibold text-ink2">
+        {t(DETAIL_I18N_KEY[row.detail])}
+      </span>
+      <span className="h-[3px] w-9 shrink-0 bg-chip">
+        <span className={`block h-full ${v.bar}`} style={{ width: `${row.recoveryPercentage}%` }} />
+      </span>
+      <span className={`mono-num w-8 shrink-0 text-right text-[10px] font-bold ${v.text}`}>
+        {Math.round(row.recoveryPercentage)}%
+      </span>
+      <span className="mono-num w-7 shrink-0 text-right text-[8px] text-ink3">
+        {row.isReady ? "✓" : row.hoursUntilReady <= 24 ? `${Math.max(1, Math.round(row.hoursUntilReady))}h` : `${row.daysUntilReady}d`}
+      </span>
     </div>
   );
 }
