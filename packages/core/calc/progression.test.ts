@@ -46,7 +46,50 @@ describe("suggestNextSet (smart-autotype progression)", () => {
 
   it("seeds from fallbackWeight when there is no history", () => {
     const s = suggestNextSet({ repMin: 8, repMax: 12, increment: 2.5, fallbackWeight: 60 });
-    expect(s).toEqual({ weight: 60, reps: 8, rir: 2, reason: "hold" });
+    expect(s).toEqual({ weight: 60, reps: 8, rir: 2, reason: "start" });
+  });
+
+  it("backs off one increment after grinding to RIR 0 below the window", () => {
+    const s = suggestNextSet({
+      last: { weight: 100, reps: 6, rir: 0 },
+      repMin: 8, repMax: 12, targetRIR: 2, increment: 2.5,
+    });
+    expect(s).toEqual({ weight: 97.5, reps: 8, rir: 2, reason: "backOff" });
+  });
+
+  it("does not back off when RIR was not logged or the set stopped early", () => {
+    // No RIR logged → assume on-target, hold instead of backing off.
+    const noRIR = suggestNextSet({
+      last: { weight: 100, reps: 6 },
+      repMin: 8, repMax: 12, targetRIR: 2, increment: 2.5,
+    });
+    expect(noRIR).toEqual({ weight: 100, reps: 6, rir: 2, reason: "hold" });
+    // Below the window but with reps in reserve → cut short, not a grind; add a rep.
+    const early = suggestNextSet({
+      last: { weight: 100, reps: 6, rir: 3 },
+      repMin: 8, repMax: 12, targetRIR: 2, increment: 2.5,
+    });
+    expect(early).toEqual({ weight: 100, reps: 7, rir: 2, reason: "addRep" });
+  });
+
+  it("never backs off below zero weight", () => {
+    const s = suggestNextSet({
+      last: { weight: 2, reps: 4, rir: 0 },
+      repMin: 8, repMax: 12, targetRIR: 2, increment: 5,
+    });
+    expect(s).toEqual({ weight: 0, reps: 8, rir: 2, reason: "backOff" });
+  });
+
+  it("progresses weight at the no-window rep ceiling, keeping e1RM flat", () => {
+    // 80×12 → e1RM 112; at 82.5 that's ≈10.7 reps → 11.
+    const s = suggestNextSet({ last: { weight: 80, reps: 12, rir: 3 }, increment: 2.5 });
+    expect(s).toEqual({ weight: 82.5, reps: 11, rir: 2, reason: "progress" });
+  });
+
+  it("progresses weight without a window even when reps started above the ceiling", () => {
+    // 40×15 → e1RM 60; at 42.5 that's ≈12.4 reps → 12.
+    const s = suggestNextSet({ last: { weight: 40, reps: 15, rir: 2 }, increment: 2.5 });
+    expect(s).toEqual({ weight: 42.5, reps: 12, rir: 2, reason: "progress" });
   });
 
   it("returns undefined with no history and no fallback", () => {
