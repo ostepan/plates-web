@@ -139,6 +139,8 @@ export interface CalcOptions {
   factorsAgeHours?: number;
   userAge?: number | null;
   customRecoveryTimes?: Record<string, number>; // seconds per muscle
+  /** Explicit base recovery time (seconds), e.g. for a detail head; wins over the muscle-group lookup. */
+  baseRecoverySeconds?: number;
   deloadMultiplier?: number;
   thresholds?: RecoveryThresholds;
   now?: number; // epoch ms, for deterministic tests
@@ -155,7 +157,8 @@ export const Recovery = {
     } = opts;
     const now = opts.now ?? Date.now();
 
-    const base = customRecoveryTimes?.[muscleGroup] ?? BASE_RECOVERY[muscleGroup] ?? 48 * HOUR;
+    const base =
+      opts.baseRecoverySeconds ?? customRecoveryTimes?.[muscleGroup] ?? BASE_RECOVERY[muscleGroup] ?? 48 * HOUR;
     // Condition multipliers stretch/shrink the decay time-constant.
     const condition =
       (factors ? factorsMultiplier(overallRecoveryScore(factors), factorsAgeHours) : 1) *

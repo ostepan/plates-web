@@ -1,11 +1,11 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { useNavigate, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { ArrowUp, Check, Lightbulb, Plus, Sparkles } from "lucide-react";
+import { ArrowUp, Check, Lightbulb, Plus, Sparkles, Timer, X } from "lucide-react";
 import { db } from "@core/db/db";
 import {
-  addExerciseToSession, addSet, discardSession, finishSession, toggleSetComplete, updateSet,
+  addExerciseToSession, addSet, deleteSet, discardSession, finishSession, toggleSetComplete, updateSet,
 } from "@core/db/mutations";
 import { ExercisePicker } from "@app/components/ExercisePicker";
 import { bestE1RMByExercise, lastWorkingSetsByExercise } from "@core/db/analytics";
@@ -149,6 +149,30 @@ export function ActiveWorkout() {
     return () => window.clearInterval(h);
   }, [session]);
 
+  // Free-running stopwatch (timed sets, carries, planks) — independent of the rest timer.
+  const [swOpen, setSwOpen] = useState(false);
+  const [swRunning, setSwRunning] = useState(false);
+  const [swMs, setSwMs] = useState(0);
+  const swBase = useRef(0);
+  useEffect(() => {
+    if (!swRunning) return;
+    const h = window.setInterval(() => setSwMs(Date.now() - swBase.current), 100);
+    return () => window.clearInterval(h);
+  }, [swRunning]);
+  function swToggle() {
+    if (swRunning) {
+      setSwMs(Date.now() - swBase.current);
+      setSwRunning(false);
+    } else {
+      swBase.current = Date.now() - swMs;
+      setSwRunning(true);
+    }
+  }
+  function swReset() {
+    setSwRunning(false);
+    setSwMs(0);
+  }
+
   if (session === undefined) return null;
   if (session === null) {
     navigate("/workout", { replace: true });
@@ -191,11 +215,24 @@ export function ActiveWorkout() {
               {session.routineNameSnapshot || t("Workout")}
             </h1>
           </div>
-          <div className="text-right">
-            <p className="font-display text-[22px] font-semibold tracking-[-0.5px] tabular-nums text-ink">
-              {formatDuration(elapsed)}
-            </p>
-            <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-ink3">{t("ELAPSED")}</p>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => setSwOpen((v) => !v)}
+              aria-label={t("Stopwatch")}
+              aria-pressed={swOpen}
+              className={`grid h-9 w-9 place-items-center border ${
+                swOpen ? "border-ink bg-ink text-white" : "border-rule text-ink2"
+              }`}
+            >
+              <Timer size={16} strokeWidth={2.25} />
+            </button>
+            <div className="text-right">
+              <p className="font-display text-[22px] font-semibold tracking-[-0.5px] tabular-nums text-ink">
+                {formatDuration(elapsed)}
+              </p>
+              <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-ink3">{t("ELAPSED")}</p>
+            </div>
           </div>
         </div>
         <div className="grid grid-cols-3">
@@ -385,19 +422,56 @@ export function ActiveWorkout() {
         />
       )}
 
-      {rest.running && (
-        <div className="absolute inset-x-0 bottom-0 flex items-center justify-between border-t border-rule bg-ink px-5 py-3 text-white pb-[max(0.75rem,env(safe-area-inset-bottom))]">
-          <span className="eyebrow text-[11px] text-white/60">{t("REST")}</span>
-          <span className="mono-num text-[22px] font-bold">{formatDuration(rest.remaining)}</span>
-          <div className="flex items-center gap-2">
-            <button type="button" onClick={() => rest.adjust(-15)} className="mono-num text-[13px] text-white/70">−15s</button>
-            <button type="button" onClick={() => rest.adjust(15)} className="mono-num text-[13px] text-white/70">+15s</button>
-            <button type="button" onClick={rest.stop} className="eyebrow text-[11px]">{t("SKIP")}</button>
-          </div>
+      {(swOpen || rest.running) && (
+        <div className="absolute inset-x-0 bottom-0">
+          {swOpen && (
+            <div
+              className={`flex items-center justify-between border-t border-rule bg-ink px-5 py-3 text-white ${
+                rest.running ? "" : "pb-[max(0.75rem,env(safe-area-inset-bottom))]"
+              }`}
+            >
+              <span className="eyebrow text-[11px] text-white/60">{t("STOPWATCH")}</span>
+              <span className="mono-num text-[22px] font-bold tabular-nums">{formatStopwatch(swMs)}</span>
+              <div className="flex items-center gap-3">
+                <button type="button" onClick={swToggle} className="eyebrow text-[11px]">
+                  {swRunning ? t("PAUSE") : t("START")}
+                </button>
+                <button type="button" onClick={swReset} className="eyebrow text-[11px] text-white/70">
+                  {t("RESET")}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { swReset(); setSwOpen(false); }}
+                  aria-label={t("Close")}
+                  className="text-white/70"
+                >
+                  <X size={14} strokeWidth={2.5} />
+                </button>
+              </div>
+            </div>
+          )}
+          {rest.running && (
+            <div className="flex items-center justify-between border-t border-rule bg-ink px-5 py-3 text-white pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+              <span className="eyebrow text-[11px] text-white/60">{t("REST")}</span>
+              <span className="mono-num text-[22px] font-bold">{formatDuration(rest.remaining)}</span>
+              <div className="flex items-center gap-2">
+                <button type="button" onClick={() => rest.adjust(-15)} className="mono-num text-[13px] text-white/70">−15s</button>
+                <button type="button" onClick={() => rest.adjust(15)} className="mono-num text-[13px] text-white/70">+15s</button>
+                <button type="button" onClick={rest.stop} className="eyebrow text-[11px]">{t("SKIP")}</button>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>
   );
+}
+
+/** "1:23.4" — minutes, seconds, tenths for the in-workout stopwatch. */
+function formatStopwatch(ms: number): string {
+  const tenths = Math.floor(ms / 100);
+  const s = Math.floor(tenths / 10);
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}.${tenths % 10}`;
 }
 
 function GridStat({ label, value }: { label: string; value: string }) {
@@ -450,6 +524,15 @@ function lastSummary(sets: WorkoutSet[]): string {
     : sets.map((s) => `${s.weight}×${s.reps}`).join(" ");
 }
 
+/** RIR picker options — value + the short explainer from the analytics glossary. */
+const RIR_OPTIONS: { value: number; label: string; explainKey: string }[] = [
+  { value: 0, label: "0", explainKey: "rir.explain.0" },
+  { value: 1, label: "1", explainKey: "rir.explain.1" },
+  { value: 2, label: "2", explainKey: "rir.explain.2" },
+  { value: 3, label: "3", explainKey: "rir.explain.3" },
+  { value: 4, label: "4+", explainKey: "rir.explain.4plus" },
+];
+
 /** Why the suggestion says what it says — chip label per progression reason. */
 const SUGGEST_REASON_KEY: Record<SetSuggestion["reason"], string> = {
   progress: "Add weight",
@@ -492,6 +575,7 @@ function SetRow({
   );
   const [rir, setRir] = useState(set.rir != null ? String(set.rir) : "");
   const [menu, setMenu] = useState(false);
+  const [rirMenu, setRirMenu] = useState(false);
 
   const badgeLabel = set.kind === "working" ? index + 1 : KIND_ABBR[set.kind];
   // Completed (or special kind) badge → peach + accent; plain pending → chip + ink2.
@@ -549,6 +633,13 @@ function SetRow({
             {KIND_ABBR[k] ? `${KIND_ABBR[k]} · ` : ""}{t(KIND_LABEL[k])}
           </button>
         ))}
+        <button
+          type="button"
+          onClick={() => { void deleteSet(set.id); setMenu(false); }}
+          className="block w-full border-t border-rule px-3 py-2 text-left text-[12px] text-bad"
+        >
+          {t("Delete set")}
+        </button>
       </div>
     </>
   ) : null;
@@ -604,14 +695,56 @@ function SetRow({
           onBlur={() => void updateSet(set.id, { reps: parseInt(reps, 10) || 0 })}
           className="mono-num w-full border border-rule bg-card px-1.5 py-1.5 text-[15px] text-ink outline-none focus:border-ink placeholder:text-ink3/60"
         />
-        <input
-          inputMode="numeric"
-          value={rir}
-          placeholder={showSuggest ? String(suggest.rir) : ghost?.rir != null ? String(ghost.rir) : "–"}
-          onChange={(e) => setRir(e.target.value)}
-          onBlur={() => void updateSet(set.id, { rir: rir.trim() === "" ? undefined : parseInt(rir, 10) || 0 })}
-          className={`mono-num w-full border border-rule bg-card px-1 py-1.5 text-center text-[14px] font-semibold outline-none focus:border-ink placeholder:text-ink3/50 ${rirColorClass(rirVal)}`}
-        />
+        <div className="relative">
+          <button
+            type="button"
+            aria-label="RIR"
+            onClick={() => setRirMenu((v) => !v)}
+            className={`mono-num w-full border border-rule bg-card px-1 py-1.5 text-center text-[14px] font-semibold ${
+              rir.trim() !== "" ? rirColorClass(rirVal) : "text-ink3/50"
+            }`}
+          >
+            {rir.trim() !== "" ? rirVal : showSuggest ? suggest.rir : ghost?.rir != null ? ghost.rir : "–"}
+          </button>
+          {rirMenu ? (
+            <>
+              <div className="fixed inset-0 z-10" onClick={() => setRirMenu(false)} />
+              <div className="absolute right-0 top-9 z-20 w-64 border border-ink bg-card">
+                <p className="border-b border-rule px-3 py-1.5 text-[9px] font-bold uppercase tracking-[0.1em] text-ink3">
+                  {t("rir.title")}
+                </p>
+                {RIR_OPTIONS.map((o) => (
+                  <button
+                    key={o.value}
+                    type="button"
+                    onClick={() => {
+                      setRir(String(o.value));
+                      void updateSet(set.id, { rir: o.value });
+                      setRirMenu(false);
+                    }}
+                    className={`flex w-full items-baseline gap-2.5 px-3 py-2 text-left ${o.value === rirVal ? "bg-chip" : ""}`}
+                  >
+                    <span className={`mono-num w-5 shrink-0 text-[13px] font-bold ${rirColorClass(o.value)}`}>{o.label}</span>
+                    <span className="text-[11px] leading-snug text-ink2">{t(o.explainKey)}</span>
+                  </button>
+                ))}
+                {rir.trim() !== "" ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setRir("");
+                      void updateSet(set.id, { rir: undefined });
+                      setRirMenu(false);
+                    }}
+                    className="block w-full border-t border-rule px-3 py-2 text-left text-[11px] text-ink3"
+                  >
+                    {t("Clear")}
+                  </button>
+                ) : null}
+              </div>
+            </>
+          ) : null}
+        </div>
         {ghost ? (
           <span className="text-right leading-tight">
             <span className="mono-num block text-[11px] text-ink2">{ghost.weight}×{ghost.reps}</span>
