@@ -138,6 +138,30 @@ export async function exerciseSessionHistory(exerciseId: ID, limit = 10): Promis
   return out;
 }
 
+export interface TruePR {
+  weight: number;
+  reps: number;
+  date: number;
+}
+
+/** Heaviest completed working set ever logged for the exercise — the "true PR". */
+export async function exerciseTruePR(exerciseId: ID): Promise<TruePR | null> {
+  const sessions = await finishedSessions();
+  const { sxs, byId } = await setsBySessionExercise(sessions.map((s) => s.id));
+  const dateBySession = new Map(sessions.map((s) => [s.id, s.date]));
+  let best: TruePR | null = null;
+  for (const sx of sxs) {
+    if (sx.exerciseId !== exerciseId) continue;
+    for (const s of byId.get(sx.id) ?? []) {
+      if (!s.isCompleted || s.kind !== "working") continue;
+      if (!best || s.weight > best.weight || (s.weight === best.weight && s.reps > best.reps)) {
+        best = { weight: s.weight, reps: s.reps, date: dateBySession.get(sx.sessionId) ?? s.createdAt };
+      }
+    }
+  }
+  return best;
+}
+
 export async function bestE1RMByExercise(): Promise<Map<ID, number>> {
   const sessions = await finishedSessions();
   const { sxs, byId } = await setsBySessionExercise(sessions.map((s) => s.id));

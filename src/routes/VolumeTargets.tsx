@@ -2,8 +2,9 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { useTranslation } from "react-i18next";
 import { ChevronLeft } from "lucide-react";
 import { db } from "@core/db/db";
-import { updateVolumeTarget } from "@core/db/mutations";
+import { applyVolumePreset, updateVolumeTarget } from "@core/db/mutations";
 import { weeklyVolumeByMuscle } from "@core/db/analytics";
+import { RP_HYPERTROPHY_TARGETS, STRENGTH_531_TARGETS } from "@core/db/seed";
 import { MUSCLE_I18N_KEY, type MuscleGroup } from "@core/models/enums";
 import { IronTopBar, IronToolbarButton } from "@ui/components/IronTopBar";
 import { Stepper } from "@ui/components/Stepper";
@@ -21,6 +22,24 @@ export function VolumeTargets() {
   const weekly = useLiveQuery(() => weeklyVolumeByMuscle(7), [], []);
   const setsByMuscle = new Map<MuscleGroup, number>(weekly.map((w) => [w.muscleGroup, w.sets]));
 
+  // Which preset (if any) the current targets correspond to — drives the chips.
+  const matchesPreset = (preset: [MuscleGroup, number, number, number][]) =>
+    targets.length > 0 &&
+    preset.every(([mg, mev, mav, mrv]) => {
+      const row = targets.find((x) => x.muscleGroup === mg);
+      return row && row.mev === mev && row.mav === mav && row.mrv === mrv;
+    });
+  const activePreset = matchesPreset(RP_HYPERTROPHY_TARGETS)
+    ? "rp"
+    : matchesPreset(STRENGTH_531_TARGETS)
+      ? "strength"
+      : "custom";
+
+  async function pickPreset(preset: [MuscleGroup, number, number, number][], name: string) {
+    if (!window.confirm(t("Replace all targets with the {{name}} preset?", { name }))) return;
+    await applyVolumePreset(preset);
+  }
+
   return (
     <div className="flex h-[100dvh] flex-col bg-bg">
       <IronTopBar
@@ -37,6 +56,28 @@ export function VolumeTargets() {
           <p className="mt-2 max-w-[320px] text-[13px] leading-relaxed text-ink2">
             {t("MEV minimum, MAV maximum adaptive, MRV maximum recoverable. RP defaults shown — tap to adjust.")}
           </p>
+        </div>
+        {/* Presets */}
+        <div className="flex gap-1.5 px-[22px] pt-3.5">
+          {(
+            [
+              ["rp", "RP HYPERTROPHY", RP_HYPERTROPHY_TARGETS],
+              ["strength", "5/3/1 STRENGTH", STRENGTH_531_TARGETS],
+              ["custom", t("CUSTOM"), null],
+            ] as const
+          ).map(([key, label, preset]) => (
+            <button
+              key={key}
+              type="button"
+              disabled={key === "custom" || key === activePreset}
+              onClick={() => preset && void pickPreset(preset, label)}
+              className={`px-2.5 py-1.5 text-[9px] font-bold tracking-[0.1em] ${
+                key === activePreset ? "bg-ink text-white" : "border border-rule text-ink2"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
         </div>
         <ul className="px-[22px]">
           {targets.map((tgt) => {

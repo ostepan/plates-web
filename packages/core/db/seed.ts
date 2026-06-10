@@ -109,10 +109,18 @@ async function expandPrograms(): Promise<void> {
 }
 
 // RP-style per-muscle MEV/MAV/MRV sets/week (port of MuscleVolumeTargetSeedLoader).
-const VOLUME_TARGETS: [MuscleGroup, number, number, number][] = [
+export const RP_HYPERTROPHY_TARGETS: [MuscleGroup, number, number, number][] = [
   ["chest", 10, 14, 22], ["back", 10, 16, 25], ["shoulders", 8, 16, 26],
   ["biceps", 6, 12, 20], ["triceps", 4, 10, 18], ["forearms", 2, 6, 14],
   ["legs", 8, 14, 20], ["glutes", 0, 8, 16], ["calves", 8, 12, 18], ["abs", 0, 10, 22],
+];
+const VOLUME_TARGETS = RP_HYPERTROPHY_TARGETS;
+
+// Strength-block preset — big-lift frequency over accessory volume (~60% of RP bands).
+export const STRENGTH_531_TARGETS: [MuscleGroup, number, number, number][] = [
+  ["chest", 6, 10, 16], ["back", 8, 12, 18], ["shoulders", 4, 8, 14],
+  ["biceps", 2, 6, 10], ["triceps", 2, 6, 10], ["forearms", 0, 4, 8],
+  ["legs", 6, 10, 16], ["glutes", 0, 6, 12], ["calves", 2, 6, 10], ["abs", 0, 6, 12],
 ];
 
 async function seedVolumeTargets(): Promise<void> {

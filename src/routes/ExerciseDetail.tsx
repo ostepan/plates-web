@@ -1,17 +1,29 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { useNavigate, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { ChevronLeft, Lightbulb, Pencil, Trash2 } from "lucide-react";
+import { Check, ChevronLeft, Lightbulb, Pencil, Trash2 } from "lucide-react";
 import { db } from "@core/db/db";
-import { deleteExercise, updateExerciseNotes } from "@core/db/mutations";
-import { exerciseE1RMSeries, exerciseSessionHistory, type ExerciseHistoryEntry } from "@core/db/analytics";
-import { muscleRecovery } from "@core/db/recovery";
+import { addExerciseToRoutine, deleteExercise, updateExerciseNotes } from "@core/db/mutations";
+import {
+  exerciseE1RMSeries, exerciseSessionHistory, exerciseTruePR,
+  type ExerciseHistoryEntry, type TruePR,
+} from "@core/db/analytics";
+import { programOwnedRoutineIds } from "@core/db/queries";
 import { MUSCLE_I18N_KEY } from "@core/models/enums";
 import type { Point } from "@core/calc/performance";
 import { IronTopBar, IronToolbarButton } from "@ui/components/IronTopBar";
 import { formatDuration, localizedExerciseName, relativeDay, weightUnit } from "@app/lib/format";
 import { useGoBack } from "@app/hooks/useGoBack";
+
+const DAY = 86_400_000;
+const PERIODS = [
+  { id: "1M", days: 30 },
+  { id: "3M", days: 91 },
+  { id: "6M", days: 182 },
+  { id: "1Y", days: 365 },
+] as const;
+type PeriodId = (typeof PERIODS)[number]["id"];
 
 export function ExerciseDetail() {
   const { id = "" } = useParams();
@@ -19,19 +31,21 @@ export function ExerciseDetail() {
   const { t, i18n } = useTranslation();
   const cs = i18n.language.startsWith("cs");
   const unit = weightUnit();
+  const [period, setPeriod] = useState<PeriodId>("3M");
+  const [routinePicker, setRoutinePicker] = useState(false);
+  const [addedTo, setAddedTo] = useState<string | null>(null);
 
   const ex = useLiveQuery(() => db.exercises.get(id), [id], undefined);
   const series = useLiveQuery(() => exerciseE1RMSeries(id), [id], [] as Point[]);
   const history = useLiveQuery(() => exerciseSessionHistory(id, 10), [id], [] as ExerciseHistoryEntry[]);
-  const recoveryPct = useLiveQuery(
+  const truePR = useLiveQuery(() => exerciseTruePR(id), [id], null as TruePR | null);
+  const routines = useLiveQuery(
     async () => {
-      const mg = (await db.exercises.get(id))?.muscleGroup;
-      if (!mg) return undefined;
-      const r = (await muscleRecovery()).find((x) => x.muscleGroup === mg);
-      return r ? Math.round(r.recoveryPercentage) : undefined;
+      const owned = await programOwnedRoutineIds();
+      return (await db.routines.toArray()).filter((r) => !owned.has(r.id));
     },
-    [id],
-    undefined,
+    [],
+    [],
   );
 
   // Local copy of the form cues so live-query re-emits don't clobber typing.
@@ -43,6 +57,21 @@ export function ExerciseDetail() {
       loadedFor.current = ex.id;
     }
   }, [ex]);
+
+  const windowed = useMemo(() => {
+    const days = PERIODS.find((p) => p.id === period)!.days;
+    const since = Date.now() - days * DAY;
+    return series.filter((p) => p.date >= since);
+  }, [series, period]);
+
+  // Δ over the last 4 weeks of the full series — the "↗ +X in 4w" caption.
+  const delta4w = useMemo(() => {
+    if (series.length < 2) return null;
+    const since = Date.now() - 28 * DAY;
+    const inWindow = series.filter((p) => p.date >= since);
+    if (inWindow.length < 2) return null;
+    return Math.round(inWindow[inWindow.length - 1].value - inWindow[0].value);
+  }, [series]);
 
   // Reached from the exercise list *and* mid-workout — go back to wherever we came from.
   const goBack = useGoBack("/exercises");
@@ -66,6 +95,7 @@ export function ExerciseDetail() {
   const instructions = cs
     ? ex.instructionsCS || ex.instructionsEN
     : ex.instructionsEN || ex.instructionsCS;
+  const latestE1RM = series.length ? Math.round(series[series.length - 1].value) : null;
 
   function onNotesChange(value: string) {
     setNotes(value);
@@ -78,6 +108,13 @@ export function ExerciseDetail() {
     navigate("/exercises", { replace: true });
   }
 
+  async function addToRoutine(routineId: string, routineName: string) {
+    await addExerciseToRoutine(routineId, id);
+    setRoutinePicker(false);
+    setAddedTo(routineName);
+    window.setTimeout(() => setAddedTo(null), 2500);
+  }
+
   return (
     <div className="flex h-[100dvh] flex-col bg-bg">
       <IronTopBar
@@ -87,23 +124,37 @@ export function ExerciseDetail() {
           </IronToolbarButton>
         }
         trailing={
-          ex.isCustom ? (
-            <div className="flex items-center gap-1.5">
-              <IronToolbarButton onClick={() => navigate(`/exercises/${id}/edit`)} label={t("Edit")}>
-                <Pencil size={16} strokeWidth={2.25} />
-              </IronToolbarButton>
-              <IronToolbarButton onClick={() => void onDelete()} label={t("Delete exercise")}>
-                <Trash2 size={16} strokeWidth={2.25} />
-              </IronToolbarButton>
-            </div>
-          ) : undefined
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => setRoutinePicker(true)}
+              className="border border-rule px-2.5 py-2 text-[10px] font-bold uppercase tracking-[0.08em] text-ink active:bg-chip"
+            >
+              {t("Add to routine")}
+            </button>
+            {ex.isCustom ? (
+              <>
+                <IronToolbarButton onClick={() => navigate(`/exercises/${id}/edit`)} label={t("Edit")}>
+                  <Pencil size={16} strokeWidth={2.25} />
+                </IronToolbarButton>
+                <IronToolbarButton onClick={() => void onDelete()} label={t("Delete exercise")}>
+                  <Trash2 size={16} strokeWidth={2.25} />
+                </IronToolbarButton>
+              </>
+            ) : null}
+          </div>
         }
       />
 
       <div className="min-h-0 flex-1 overflow-y-auto pb-10">
         <div className="px-[22px] pb-4 pt-2">
           <p className="eyebrow text-accent mb-1">
-            {[t(MUSCLE_I18N_KEY[ex.muscleGroup]), ex.isCustom ? t("Custom") : null]
+            {[
+              t(MUSCLE_I18N_KEY[ex.muscleGroup]),
+              t(`equipment.${ex.equipment}`),
+              t(`mechanic.${ex.mechanic}`),
+              ex.isCustom ? t("Custom") : null,
+            ]
               .filter(Boolean)
               .join(" · ")}
           </p>
@@ -112,40 +163,86 @@ export function ExerciseDetail() {
           </h1>
         </div>
 
-        {/* Performance: PR / last performed / muscle recovery */}
-        <div className="grid grid-cols-3 divide-x divide-hairline border-y border-hairline">
-          <Stat
-            label={t("Best e1RM")}
-            value={series.length ? `${Math.round(Math.max(...series.map((p) => p.value)))}` : "—"}
-            sub={series.length ? unit : undefined}
-          />
-          <Stat
-            label={t("Last")}
-            value={history.length ? relativeDay(history[0].date, i18n.language) : "—"}
-          />
-          <Stat
-            label={t("Recovery")}
-            value={recoveryPct != null ? `${recoveryPct}%` : "—"}
-            tone={recoveryPct != null ? (recoveryPct < 50 ? "text-accent" : recoveryPct < 75 ? "text-warn" : "text-ok") : undefined}
-          />
+        {addedTo && (
+          <p className="mx-[22px] mb-3 flex items-center gap-2 bg-accentSoft px-3 py-2 text-[12px] text-accentInk">
+            <Check size={13} strokeWidth={3} /> {t("Added to")} <b>{addedTo}</b>
+          </p>
+        )}
+
+        {/* Performance: estimated 1RM + true PR (design 2-up) */}
+        <div className="grid grid-cols-2 border-y border-rule">
+          <div className="border-r border-rule px-[18px] py-4">
+            <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-ink3">{t("Est 1RM")}</p>
+            <p className="mt-1 font-display text-[34px] font-extrabold leading-none tabular-nums tracking-[-1.2px] text-ink">
+              {latestE1RM ?? "—"}
+              {latestE1RM != null && <span className="ml-1 text-[12px] font-bold text-ink2">{unit}</span>}
+            </p>
+            {delta4w != null && delta4w !== 0 && (
+              <p className={`mt-1 font-display text-[11px] font-bold ${delta4w > 0 ? "text-accent" : "text-ink3"}`}>
+                {delta4w > 0 ? "↗ +" : "↘ "}
+                {delta4w} {t("in 4w")}
+              </p>
+            )}
+          </div>
+          <div className="px-[18px] py-4">
+            <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-ink3">{t("True PR")}</p>
+            <p className="mt-1 font-display text-[34px] font-extrabold leading-none tabular-nums tracking-[-1.2px] text-ink">
+              {truePR ? truePR.weight : "—"}
+              {truePR && <span className="ml-1 text-[12px] font-bold text-ink2">{unit}</span>}
+            </p>
+            {truePR && (
+              <p className="mt-1 text-[11px] text-ink3">
+                {new Date(truePR.date).toLocaleDateString(i18n.language, { month: "short", day: "numeric" })} ·{" "}
+                {truePR.reps} {t("reps")}
+              </p>
+            )}
+          </div>
         </div>
 
-        {/* e1RM trend */}
+        {/* e1RM trend with period selector */}
         {series.length >= 2 ? (
           <section className="px-[22px] pt-5">
-            <div className="mb-1.5 flex items-baseline justify-between">
-              <p className="eyebrow text-ink3">{t("e1RM trend")}</p>
-              <p className="mono-num text-[11px] text-ink3">
-                {Math.round(series[0].value)} → <b className="text-ink">{Math.round(series[series.length - 1].value)}</b> {unit}
-              </p>
+            <div className="mb-2 flex items-baseline justify-between">
+              <p className="eyebrow text-ink3">{t("1RM TREND")}</p>
+              <div className="flex gap-1">
+                {PERIODS.map((p) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => setPeriod(p.id)}
+                    className={`px-2 py-[3px] font-display text-[10px] font-bold ${
+                      p.id === period ? "bg-ink text-white" : "border border-rule text-ink3"
+                    }`}
+                  >
+                    {p.id}
+                  </button>
+                ))}
+              </div>
             </div>
-            <Sparkline points={series} />
+            {windowed.length >= 2 ? (
+              <>
+                <Sparkline points={windowed} />
+                <div className="mt-1.5 flex justify-between text-[10px] font-semibold uppercase tracking-[0.05em] text-ink3">
+                  <span>
+                    {new Date(windowed[0].date).toLocaleDateString(i18n.language, { month: "short", day: "numeric" })}
+                  </span>
+                  <span>
+                    {new Date(windowed[windowed.length - 1].date).toLocaleDateString(i18n.language, {
+                      month: "short",
+                      day: "numeric",
+                    })}
+                  </span>
+                </div>
+              </>
+            ) : (
+              <p className="py-4 text-[12px] text-ink2">{t("Not enough sessions in this window.")}</p>
+            )}
           </section>
         ) : null}
 
         {/* Session history */}
         <section className="pt-5">
-          <p className="eyebrow text-ink3 mb-1.5 px-[22px]">{t("History")}</p>
+          <p className="eyebrow text-ink3 mb-1.5 px-[22px]">{t("SESSIONS")}</p>
           {history.length === 0 ? (
             <p className="px-[22px] py-3 text-[13px] text-ink2">{t("No history yet")}</p>
           ) : (
@@ -212,42 +309,40 @@ export function ExerciseDetail() {
           />
         </section>
       </div>
-    </div>
-  );
-}
 
-function Stat({ label, value, sub, tone }: { label: string; value: string; sub?: string; tone?: string }) {
-  return (
-    <div className="px-[14px] py-2.5">
-      <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-ink3">{label}</p>
-      <p className={`mt-px font-display text-[16px] font-extrabold tracking-[-0.3px] tabular-nums ${tone ?? "text-ink"}`}>
-        {value}
-        {sub ? <span className="ml-1 text-[10px] font-semibold text-ink3">{sub}</span> : null}
-      </p>
+      {/* Routine picker sheet */}
+      {routinePicker && (
+        <div className="fixed inset-0 z-50 flex items-end bg-ink/55" onClick={() => setRoutinePicker(false)}>
+          <div className="max-h-[70dvh] w-full overflow-y-auto bg-bg pb-[max(1.5rem,env(safe-area-inset-bottom))]" onClick={(e) => e.stopPropagation()}>
+            <p className="eyebrow text-ink3 px-[22px] pb-2 pt-5">{t("ADD TO ROUTINE")}</p>
+            {routines.length === 0 ? (
+              <p className="px-[22px] py-4 text-[13px] text-ink2">{t("No routines yet — create one on the Workout tab.")}</p>
+            ) : (
+              <ul className="divide-y divide-hairline border-t border-hairline">
+                {routines.map((r) => (
+                  <li key={r.id}>
+                    <button
+                      type="button"
+                      onClick={() => void addToRoutine(r.id, r.name)}
+                      className="w-full px-[22px] py-3.5 text-left font-display font-bold text-ink active:bg-chip"
+                    >
+                      {r.name}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <button
+              type="button"
+              onClick={() => setRoutinePicker(false)}
+              className="eyebrow mt-3 w-full py-2 text-center text-[11px] text-ink2"
+            >
+              {t("Cancel")}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
-  );
-}
-
-/** Tiny dependency-free e1RM line chart — keeps Recharts out of the main bundle. */
-function Sparkline({ points }: { points: Point[] }) {
-  const w = 320;
-  const h = 88;
-  const pad = 5;
-  const values = points.map((p) => p.value);
-  const min = Math.min(...values);
-  const max = Math.max(...values);
-  const span = max - min || 1;
-  const x = (i: number) => pad + (i / (points.length - 1)) * (w - 2 * pad);
-  const y = (v: number) => h - pad - ((v - min) / span) * (h - 2 * pad);
-  const d = points.map((p, i) => `${i === 0 ? "M" : "L"}${x(i).toFixed(1)},${y(p.value).toFixed(1)}`).join(" ");
-  const last = points[points.length - 1];
-  return (
-    <svg viewBox={`0 0 ${w} ${h}`} className="w-full" role="img" aria-label="e1RM">
-      <line x1={pad} y1={y(max)} x2={w - pad} y2={y(max)} stroke="rgba(23,22,20,0.07)" />
-      <line x1={pad} y1={y(min)} x2={w - pad} y2={y(min)} stroke="rgba(23,22,20,0.07)" />
-      <path d={d} fill="none" stroke="#171614" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
-      <circle cx={x(points.length - 1)} cy={y(last.value)} r="3" fill="#C64D2A" />
-    </svg>
   );
 }
 
@@ -257,5 +352,29 @@ function MetaRow({ label, value, mono }: { label: string; value: string; mono?: 
       <dt className="eyebrow text-ink3">{label}</dt>
       <dd className={`text-[14px] text-ink ${mono ? "mono-num" : ""}`}>{value}</dd>
     </div>
+  );
+}
+
+/** e1RM line chart — area fill + per-session dots, matching the Iron MiniChart. */
+function Sparkline({ points }: { points: Point[] }) {
+  const w = 320;
+  const h = 96;
+  const pad = 5;
+  const values = points.map((p) => p.value);
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const span = max - min || 1;
+  const x = (i: number) => pad + (i / (points.length - 1)) * (w - 2 * pad);
+  const y = (v: number) => h - pad - ((v - min) / span) * (h - 2 * pad);
+  const d = points.map((p, i) => `${i === 0 ? "M" : "L"}${x(i).toFixed(1)},${y(p.value).toFixed(1)}`).join(" ");
+  const area = `${d} L${x(points.length - 1).toFixed(1)},${h - pad} L${x(0).toFixed(1)},${h - pad} Z`;
+  return (
+    <svg viewBox={`0 0 ${w} ${h}`} className="w-full" role="img" aria-label="e1RM">
+      <path d={area} className="fill-accentSoft" />
+      <path d={d} fill="none" stroke="#171614" strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />
+      {points.map((p, i) => (
+        <circle key={i} cx={x(i)} cy={y(p.value)} r="2.5" className="fill-ink" />
+      ))}
+    </svg>
   );
 }
