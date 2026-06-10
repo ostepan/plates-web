@@ -4,12 +4,19 @@ import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { ChevronRight, Lightbulb, Plus, Search } from "lucide-react";
 import { db } from "@core/db/db";
+import { bestE1RMByExercise, lastWorkingSetsByExercise } from "@core/db/analytics";
 import {
   ALL_EQUIPMENT, ALL_MUSCLE_GROUPS, MUSCLE_I18N_KEY, type Equipment, type MuscleGroup,
 } from "@core/models/enums";
-import type { Exercise } from "@core/models/types";
+import type { Exercise, ID } from "@core/models/types";
 import { IronTopBar, IronToolbarButton } from "@ui/components/IronTopBar";
 import { localizedExerciseName } from "@app/lib/format";
+
+/** "6h" / "2d" — dense last-trained stamp for list rows. */
+function compactAgo(ts: number): string {
+  const hours = Math.max(0, Math.floor((Date.now() - ts) / 3_600_000));
+  return hours < 24 ? `${hours}h` : `${Math.floor(hours / 24)}d`;
+}
 
 export function ExercisesTab() {
   const { t, i18n } = useTranslation();
@@ -18,6 +25,22 @@ export function ExercisesTab() {
   const [muscle, setMuscle] = useState<MuscleGroup | "all">("all");
   const [equip, setEquip] = useState<Equipment | "all">("all");
   const exercises = useLiveQuery(() => db.exercises.toArray(), [], undefined);
+  const prByExercise = useLiveQuery(() => bestE1RMByExercise(), [], new Map<ID, number>());
+  const lastByExercise = useLiveQuery(
+    () => lastWorkingSetsByExercise(""),
+    [],
+    new Map<ID, { date: number }>(),
+  );
+
+  // Three most recently trained — surfaced above the sections (design: "Recently used").
+  const recent = useMemo(() => {
+    if (!exercises) return [];
+    return exercises
+      .map((e) => ({ exercise: e, last: lastByExercise.get(e.id)?.date }))
+      .filter((x): x is { exercise: Exercise; last: number } => x.last != null)
+      .sort((a, b) => b.last - a.last)
+      .slice(0, 3);
+  }, [exercises, lastByExercise]);
 
   const groups = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -82,6 +105,50 @@ export function ExercisesTab() {
         </p>
       ) : (
         <div className="flex-1 overflow-y-auto">
+          {/* Recently used — only on the unfiltered view */}
+          {!query.trim() && muscle === "all" && equip === "all" && recent.length > 0 && (
+            <section>
+              <div className="flex items-baseline justify-between border-b border-hairline px-[22px] py-1.5">
+                <span className="eyebrow text-ink3">{t("RECENTLY USED")}</span>
+              </div>
+              <ul className="divide-y divide-hairline">
+                {recent.map(({ exercise: ex, last }) => {
+                  const pr = prByExercise.get(ex.id);
+                  return (
+                    <li key={ex.id}>
+                      <button
+                        type="button"
+                        onClick={() => navigate(`/exercises/${ex.id}`)}
+                        className="flex w-full items-center gap-3 px-[22px] py-3 text-left active:bg-chip"
+                      >
+                        <span className="mono-num grid h-[30px] w-[30px] shrink-0 place-items-center bg-accentSoft text-[10px] font-extrabold text-accent">
+                          {compactAgo(last)}
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate font-display text-[15px] font-bold text-ink">
+                            {localizedExerciseName(ex, i18n.language)}
+                          </span>
+                          <span className="eyebrow mt-0.5 block text-[9px] text-ink2">
+                            {t(MUSCLE_I18N_KEY[ex.muscleGroup])} · {t(`equipment.${ex.equipment}`)}
+                          </span>
+                        </span>
+                        <span className="mono-num shrink-0 text-[13px] font-bold tabular-nums text-ink">
+                          {pr != null ? (
+                            <>
+                              {Math.round(pr)}
+                              <span className="ml-0.5 text-[9px] text-ink3">1RM</span>
+                            </>
+                          ) : (
+                            <span className="text-ink3">—</span>
+                          )}
+                        </span>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            </section>
+          )}
           {groups.map((g) => (
             <section key={g.muscle}>
               <div className="flex items-baseline justify-between border-b border-hairline px-[22px] py-1.5">
@@ -89,28 +156,47 @@ export function ExercisesTab() {
                 <span className="mono-num text-[11px] text-ink3">{g.items.length}</span>
               </div>
               <ul className="divide-y divide-hairline">
-                {g.items.map((ex) => (
-                  <li key={ex.id}>
-                    <button
-                      type="button"
-                      onClick={() => navigate(`/exercises/${ex.id}`)}
-                      className="flex w-full items-center justify-between px-[22px] py-3 text-left active:bg-chip"
-                    >
-                      <div className="min-w-0">
-                        <p className="flex items-center gap-1.5 font-display font-semibold text-ink">
-                          <span className="truncate">{localizedExerciseName(ex, i18n.language)}</span>
-                          {ex.userNotes ? (
-                            <Lightbulb size={12} strokeWidth={2.25} className="shrink-0 text-fade" />
-                          ) : null}
-                        </p>
-                        <p className="eyebrow text-ink3 mt-0.5">
-                          {t(`equipment.${ex.equipment}`)} · {t(`mechanic.${ex.mechanic}`)}
-                        </p>
-                      </div>
-                      <ChevronRight size={16} strokeWidth={2.25} className="shrink-0 text-ink3" />
-                    </button>
-                  </li>
-                ))}
+                {g.items.map((ex) => {
+                  const pr = prByExercise.get(ex.id);
+                  const last = lastByExercise.get(ex.id)?.date;
+                  return (
+                    <li key={ex.id}>
+                      <button
+                        type="button"
+                        onClick={() => navigate(`/exercises/${ex.id}`)}
+                        className="flex w-full items-center gap-3 px-[22px] py-3 text-left active:bg-chip"
+                      >
+                        <div className="min-w-0 flex-1">
+                          <p className="flex items-center gap-1.5 font-display font-semibold text-ink">
+                            <span className="truncate">{localizedExerciseName(ex, i18n.language)}</span>
+                            {ex.userNotes ? (
+                              <Lightbulb size={12} strokeWidth={2.25} className="shrink-0 text-fade" />
+                            ) : null}
+                          </p>
+                          <p className="eyebrow text-ink3 mt-0.5">
+                            {t(`equipment.${ex.equipment}`)} · {t(`mechanic.${ex.mechanic}`)}
+                          </p>
+                        </div>
+                        {pr != null && (
+                          <span className="shrink-0 text-right">
+                            <span className="mono-num block text-[13px] font-bold tabular-nums text-ink">
+                              {Math.round(pr)}
+                            </span>
+                            <span className="block text-[9px] font-bold uppercase tracking-[0.08em] text-ink3">
+                              PR
+                            </span>
+                          </span>
+                        )}
+                        {last != null && (
+                          <span className="mono-num w-7 shrink-0 text-right text-[10px] tabular-nums text-ink3">
+                            {compactAgo(last)}
+                          </span>
+                        )}
+                        <ChevronRight size={16} strokeWidth={2.25} className="shrink-0 text-ink3" />
+                      </button>
+                    </li>
+                  );
+                })}
               </ul>
             </section>
           ))}

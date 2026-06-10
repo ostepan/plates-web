@@ -53,7 +53,7 @@ export function ActiveWorkout() {
   const { sessionId = "" } = useParams();
   const navigate = useNavigate();
   const { t, i18n } = useTranslation();
-  const rest = useRestTimer();
+  const rest = useRestTimer(sessionId);
   const [picking, setPicking] = useState(false);
   const [openCues, setOpenCues] = useState<Set<ID>>(() => new Set());
   const toggleCues = (sxId: ID) =>
@@ -451,9 +451,15 @@ export function ActiveWorkout() {
             </div>
           )}
           {rest.running && (
-            <div className="flex items-center justify-between border-t border-rule bg-ink px-5 py-3 text-white pb-[max(0.75rem,env(safe-area-inset-bottom))]">
-              <span className="eyebrow text-[11px] text-white/60">{t("REST")}</span>
+            <div className="flex items-center justify-between gap-3 border-t-2 border-accent bg-ink px-5 py-3 text-white pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+              <span className="eyebrow text-[11px] text-accent">{t("REST")}</span>
               <span className="mono-num text-[22px] font-bold">{formatDuration(rest.remaining)}</span>
+              <span className="relative h-1 min-w-0 flex-1 overflow-hidden bg-white/[0.18]">
+                <span
+                  className="absolute bottom-0 left-0 top-0 bg-accent transition-[width] duration-500 ease-linear"
+                  style={{ width: `${rest.total > 0 ? Math.max(0, Math.min(100, (rest.remaining / rest.total) * 100)) : 0}%` }}
+                />
+              </span>
               <div className="flex items-center gap-2">
                 <button type="button" onClick={() => rest.adjust(-15)} className="mono-num text-[13px] text-white/70">−15s</button>
                 <button type="button" onClick={() => rest.adjust(15)} className="mono-num text-[13px] text-white/70">+15s</button>

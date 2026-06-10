@@ -6,6 +6,7 @@ import { BrowserRouter, Navigate, Outlet, Route, Routes } from "react-router-dom
 import { useTranslation } from "react-i18next";
 import { IronTabBar } from "@ui/components/IronTabBar";
 import { seedIfNeeded } from "@core/db/seed";
+import { FloatingRestTimer } from "./components/FloatingRestTimer";
 import { WorkoutTab } from "./routes/WorkoutTab";
 import { ExercisesTab } from "./routes/ExercisesTab";
 import { ExerciseDetail } from "./routes/ExerciseDetail";
@@ -163,6 +164,7 @@ export function App() {
 
         <Route path="*" element={<Navigate to="/workout" replace />} />
       </Routes>
+      <FloatingRestTimer />
       </Suspense>
       </ErrorBoundary>
     </BrowserRouter>

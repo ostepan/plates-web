@@ -49,6 +49,23 @@ Legend: ✅ done · 🟡 partial · ⬜ todo · ➖ N/A on web (platform).
 | **Confetti** on workout summary — dependency-free canvas burst, reduced-motion aware, bigger on PRs | `Confetti.tsx`, `SessionSummary.tsx` |
 | Workout **stopwatch** — running elapsed timer in active workout header | `ActiveWorkout.tsx` (already present) |
 
+## ✅ Design-parity pass (Claude Design "Plates" bundle)
+Implemented from the exported Iron canvas (`plates/project/index.html`):
+| Design artboard | Web |
+|---|---|
+| In-app **floating rest-timer FAB** (progress ring + countdown, survives navigation) | `stores/restTimer.ts` (global Zustand timer), `FloatingRestTimer.tsx`, `useRestTimer` facade |
+| History — search, **month grouping** w/ session+volume totals, big date cell, **PR ×n badge**, sets·volume·min subline | `History.tsx`, `historyRows()` in `analytics.ts` |
+| Session detail — 4-stat strip, **recovery-at-start snapshot** + deload badge, set-kind badges, RIR colors, ~e1RM, **PR badges**, session note, delete | `SessionDetail.tsx` |
+| Summary — **PR capsule(s)**, "N sets · top W×R" breakdown lines, **Add note** (persists to session) | `SessionSummary.tsx`, `updateSessionNotes` |
+| Exercises tab — **Recently used** strip (last-trained chip + e1RM), PR + last-trained columns | `ExercisesTab.tsx` |
+| PR timeline — filter chips (ALL/BIG-4/UPPER/LOWER), rail+trophy dots, **"+Δ from previous PR"** | `PRsSegment.tsx`, `prTimeline()` now carries `sessionId`+`prevE1rm` |
+| Stats — **streak hero card** (flame, best-ever) + 2×3 grid (week/mo/all-time/all-vol/avg-dur/days-wk) | `OverviewSegment.tsx`, extended `overviewStats()` |
+| Profile — stat strip + Tools/Preferences/Data sections w/ hints, Programs + Recovery-settings rows, reset onboarding | `ProfileTab.tsx` |
+| Body weight — Current / 7-day avg / **Δ 30d** hero + 30-day area chart | `BodyWeight.tsx` |
+| Plate calc — target stepper, **bar chips**, visual plate stack w/ sleeve, grouped breakdown, dark **Loaded** bar w/ off-by | `PlateCalculator.tsx` |
+| Volume targets — RP intro copy, **"sets this wk"** per muscle, MEV/MAV/MRV color-striped cells | `VolumeTargets.tsx` |
+| Active workout — rest bar progress fill + accent top border | `ActiveWorkout.tsx` |
+
 ## 🟡 Partial
 | Feature | iOS | Web gap |
 |---|---|---|

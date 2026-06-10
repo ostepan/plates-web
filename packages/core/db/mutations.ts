@@ -378,6 +378,10 @@ export async function deleteSet(id: ID): Promise<void> {
   await db.workoutSets.delete(id);
 }
 
+export async function updateSessionNotes(sessionId: ID, notes: string): Promise<void> {
+  await db.sessions.update(sessionId, { notes, updatedAt: now() });
+}
+
 /** Finish: stamp duration + total volume so it leaves the in-progress state. */
 export async function finishSession(sessionId: ID): Promise<void> {
   const session = await db.sessions.get(sessionId);
