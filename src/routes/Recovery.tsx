@@ -39,9 +39,6 @@ export function Recovery() {
   const goBack = useGoBack("/workout");
   const [params] = useSearchParams();
   const initialSeg = params.get("seg");
-  const [seg, setSeg] = useState<Segment>(
-    initialSeg === "checkin" || initialSeg === "trends" ? initialSeg : "status",
-  );
 
   return (
     <div className="flex h-[100dvh] flex-col bg-bg">
@@ -58,9 +55,27 @@ export function Recovery() {
           </IronToolbarButton>
         }
       />
+      <RecoveryComposer
+        initialSeg={initialSeg === "checkin" || initialSeg === "trends" ? initialSeg : "status"}
+      />
+    </div>
+  );
+}
+
+/**
+ * Status / Check-in / Trends composer without the page chrome — shared by the
+ * /recovery route and the Analytics tab's Recovery segment.
+ */
+export function RecoveryComposer({ initialSeg = "status", dense = false }: { initialSeg?: Segment; dense?: boolean }) {
+  const { t } = useTranslation();
+  const [seg, setSeg] = useState<Segment>(initialSeg);
+
+  return (
+    <>
       <IronSegmented<Segment>
         value={seg}
         onChange={setSeg}
+        dense={dense}
         options={[
           { value: "status", label: t("Status") },
           { value: "checkin", label: t("Check-in") },
@@ -72,7 +87,7 @@ export function Recovery() {
         {seg === "checkin" && <RecoveryCheckIn onSaved={() => setSeg("status")} />}
         {seg === "trends" && <RecoveryTrends />}
       </div>
-    </div>
+    </>
   );
 }
 

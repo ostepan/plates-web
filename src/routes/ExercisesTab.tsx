@@ -83,13 +83,25 @@ export function ExercisesTab() {
             className="w-full bg-transparent text-[14px] text-ink outline-none placeholder:text-ink3"
           />
         </div>
-        <div className="flex gap-2">
-          <Filter
-            label={t("MUSCLE")}
-            value={muscle}
-            onChange={(v) => setMuscle(v as MuscleGroup | "all")}
-            options={[["all", ""], ...ALL_MUSCLE_GROUPS.map((m) => [m, t(MUSCLE_I18N_KEY[m])] as [string, string])]}
-          />
+        <div className="flex items-center gap-2">
+          {/* Muscle chips (design) — equipment keeps the compact select */}
+          <div className="flex min-w-0 flex-1 gap-1.5 overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            {(["all", ...ALL_MUSCLE_GROUPS] as const).map((m) => {
+              const active = m === muscle;
+              return (
+                <button
+                  key={m}
+                  type="button"
+                  onClick={() => setMuscle(m)}
+                  className={`shrink-0 px-[11px] py-1.5 text-[10px] font-bold uppercase tracking-[0.1em] ${
+                    active ? "bg-ink text-white" : "border border-rule text-ink2"
+                  }`}
+                >
+                  {m === "all" ? t("ALL") : t(MUSCLE_I18N_KEY[m])}
+                </button>
+              );
+            })}
+          </div>
           <Filter
             label={t("EQUIPMENT")}
             value={equip}
@@ -221,7 +233,7 @@ function Filter({
     <select
       value={value}
       onChange={(e) => onChange(e.target.value)}
-      className="eyebrow flex-1 appearance-none border border-rule bg-card px-3 py-2 text-[11px] text-ink2 outline-none"
+      className="eyebrow w-[104px] shrink-0 appearance-none border border-rule bg-card px-2.5 py-2 text-[10px] text-ink2 outline-none"
     >
       {options.map(([v, l]) => (
         <option key={v} value={v}>

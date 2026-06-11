@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { useNavigate, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { ArrowUp, Check, Lightbulb, Plus, Sparkles, Timer, X } from "lucide-react";
+import { ArrowDown, ArrowUp, Check, Lightbulb, Plus, Timer, X } from "lucide-react";
 import { db } from "@core/db/db";
 import {
   addExerciseToSession, addSet, deleteSet, discardSession, finishSession, toggleSetComplete, updateSet,
@@ -11,6 +11,8 @@ import { ExercisePicker } from "@app/components/ExercisePicker";
 import { bestE1RMByExercise, lastWorkingSetsByExercise } from "@core/db/analytics";
 import { getRecoverySettings, muscleRecovery } from "@core/db/recovery";
 import { Recovery } from "@core/calc/recovery";
+import { OneRM } from "@core/calc/oneRM";
+import { STANDARD_KG_PLATES, STANDARD_LB_PLATES, plates } from "@core/calc/plate";
 import { suggestNextSet, type SetSuggestion } from "@core/calc/progression";
 import type { Exercise, ID, WorkoutSet } from "@core/models/types";
 import type { MuscleGroup, SetKind } from "@core/models/enums";
@@ -55,6 +57,7 @@ export function ActiveWorkout() {
   const { t, i18n } = useTranslation();
   const rest = useRestTimer(sessionId);
   const [picking, setPicking] = useState(false);
+  const [editingSetId, setEditingSetId] = useState<ID | null>(null);
   const [openCues, setOpenCues] = useState<Set<ID>>(() => new Set());
   const toggleCues = (sxId: ID) =>
     setOpenCues((prev) => {
@@ -354,7 +357,7 @@ export function ActiveWorkout() {
 
               {/* Sets */}
               <div className="px-[22px] pb-3.5">
-                <div className="grid grid-cols-[30px_61px_61px_64px_70px_30px] gap-1.5 py-1.5">
+                <div className="grid grid-cols-[30px_1fr_1fr_64px_70px_30px] gap-1.5 py-1.5">
                   <span className="text-[9px] font-bold uppercase tracking-[0.12em] text-ink3">{t("SET")}</span>
                   <span className="text-[9px] font-bold uppercase tracking-[0.12em] text-ink3">{t("Wt")}</span>
                   <span className="text-[9px] font-bold uppercase tracking-[0.12em] text-ink3">{t("Reps")}</span>
@@ -370,6 +373,10 @@ export function ActiveWorkout() {
                     ghost={b.ghostRows[i]}
                     suggest={b.suggestions[i]}
                     active={s.id === activeSetId}
+                    equipment={b.exercise?.equipment}
+                    editing={s.id === editingSetId}
+                    onEdit={() => setEditingSetId(s.id)}
+                    onCloseEdit={() => setEditingSetId(null)}
                     onComplete={(done) => done && rest.start(b.restSeconds)}
                   />
                 ))}
@@ -530,16 +537,7 @@ function lastSummary(sets: WorkoutSet[]): string {
     : sets.map((s) => `${s.weight}×${s.reps}`).join(" ");
 }
 
-/** RIR picker options — value + the short explainer from the analytics glossary. */
-const RIR_OPTIONS: { value: number; label: string; explainKey: string }[] = [
-  { value: 0, label: "0", explainKey: "rir.explain.0" },
-  { value: 1, label: "1", explainKey: "rir.explain.1" },
-  { value: 2, label: "2", explainKey: "rir.explain.2" },
-  { value: 3, label: "3", explainKey: "rir.explain.3" },
-  { value: 4, label: "4+", explainKey: "rir.explain.4plus" },
-];
-
-/** Why the suggestion says what it says — chip label per progression reason. */
+/** Why the suggestion says what it says — shown in the set editor's eyebrow. */
 const SUGGEST_REASON_KEY: Record<SetSuggestion["reason"], string> = {
   progress: "Add weight",
   addRep: "+1 rep",
@@ -554,6 +552,10 @@ function SetRow({
   ghost,
   suggest,
   active,
+  equipment,
+  editing,
+  onEdit,
+  onCloseEdit,
   onComplete,
 }: {
   set: WorkoutSet;
@@ -561,63 +563,64 @@ function SetRow({
   ghost?: WorkoutSet;
   suggest?: SetSuggestion;
   active?: boolean;
+  equipment?: string;
+  editing: boolean;
+  onEdit: () => void;
+  onCloseEdit: () => void;
   onComplete: (done: boolean) => void;
 }) {
   const { t } = useTranslation();
   const unit = weightUnit();
-  // Smart autotype: pre-fill from the progression suggestion (falls back to the
-  // last session's matching set) so a pending row is loggable with a single tap;
-  // persisted on blur/complete as before. Warm-ups follow their own loading.
-  const prefill = set.kind !== "warmup" ? suggest : undefined;
-  const [weight, setWeight] = useState(
-    set.weight ? String(set.weight)
-    : prefill?.weight ? String(prefill.weight)
-    : ghost?.weight ? String(ghost.weight) : "",
-  );
-  const [reps, setReps] = useState(
-    set.reps ? String(set.reps)
-    : prefill?.reps ? String(prefill.reps)
-    : ghost?.reps ? String(ghost.reps) : "",
-  );
-  const [rir, setRir] = useState(set.rir != null ? String(set.rir) : "");
   const [menu, setMenu] = useState(false);
-  const [rirMenu, setRirMenu] = useState(false);
 
   const badgeLabel = set.kind === "working" ? index + 1 : KIND_ABBR[set.kind];
   // Completed (or special kind) badge → peach + accent; plain pending → chip + ink2.
   const badgeHot = set.isCompleted || (set.kind !== "working" && set.kind !== "warmup");
-  const rirVal = rir.trim() === "" ? undefined : parseInt(rir, 10);
   // Suggestions target working sets — warm-ups follow their own logic.
   const showSuggest = suggest && set.kind !== "warmup";
+  // Display values: logged numbers, else the suggested (or last-time) prefill.
+  const dispWeight = set.weight || (showSuggest ? suggest.weight : ghost?.weight) || 0;
+  const dispReps = set.reps || (showSuggest ? suggest.reps : ghost?.reps) || 0;
+  const dispRir = set.rir ?? (showSuggest ? suggest.rir : ghost?.rir);
 
+  /** Quick-log from the check square — completes with the displayed numbers. */
   async function toggle() {
     if (!set.isCompleted) {
-      // Blank fields complete with the suggested (or last-time) numbers — zero-typing logging.
-      const typedW = parseFloat(weight);
-      const typedR = parseInt(reps, 10);
-      const w = Number.isFinite(typedW) ? typedW : (showSuggest ? suggest.weight : ghost?.weight) ?? 0;
-      const r = Number.isFinite(typedR) ? typedR : (showSuggest ? suggest.reps : ghost?.reps) ?? 0;
-      setWeight(w ? String(w) : "");
-      setReps(r ? String(r) : "");
-      await updateSet(set.id, { weight: w, reps: r });
+      await updateSet(set.id, { weight: dispWeight, reps: dispReps });
     }
     const done = await toggleSetComplete(set.id);
     onComplete(done);
   }
 
-  function fillSuggestion() {
-    if (!showSuggest) return;
-    setWeight(String(suggest.weight));
-    setReps(String(suggest.reps));
-    setRir(String(suggest.rir));
-    void updateSet(set.id, { weight: suggest.weight, reps: suggest.reps, rir: suggest.rir });
+  // Editor takes over the row entirely (design: tap set to edit + log)
+  if (editing) {
+    return (
+      <SetEditor
+        set={set}
+        initial={{ weight: dispWeight, reps: dispReps, rir: dispRir ?? 2 }}
+        reason={showSuggest && !set.isCompleted ? t(SUGGEST_REASON_KEY[suggest.reason]) : undefined}
+        equipment={equipment}
+        onCancel={onCloseEdit}
+        onCommit={async (v) => {
+          await updateSet(set.id, { weight: v.weight, reps: v.reps, rir: v.rir });
+          if (!set.isCompleted) {
+            const done = await toggleSetComplete(set.id);
+            onComplete(done);
+          }
+          onCloseEdit();
+        }}
+      />
+    );
   }
 
   const Badge = (
     <button
       type="button"
       aria-label={t("Set type")}
-      onClick={() => setMenu((v) => !v)}
+      onClick={(e) => {
+        e.stopPropagation();
+        setMenu((v) => !v);
+      }}
       className={`flex h-[26px] w-[26px] items-center justify-center font-display text-[12px] font-extrabold ${
         badgeHot ? "bg-accentSoft text-accent" : "bg-chip text-ink2"
       }`}
@@ -627,8 +630,8 @@ function SetRow({
   );
   const Menu = menu ? (
     <>
-      <div className="fixed inset-0 z-10" onClick={() => setMenu(false)} />
-      <div className="absolute left-0 top-7 z-20 w-32 border border-ink bg-card">
+      <div className="fixed inset-0 z-10" onClick={(e) => { e.stopPropagation(); setMenu(false); }} />
+      <div className="absolute left-0 top-7 z-20 w-32 border border-ink bg-card" onClick={(e) => e.stopPropagation()}>
         {SET_KINDS.map((k) => (
           <button
             key={k}
@@ -650,28 +653,38 @@ function SetRow({
     </>
   ) : null;
 
-  // ---- COMPLETED: compact summary row (tap check to re-open) ----
+  // ---- COMPLETED: compact summary row (tap to revise, check to un-complete) ----
   if (set.isCompleted) {
     const beatGhost = ghost ? set.weight * set.reps > ghost.weight * ghost.reps : false;
+    const underGhost = ghost ? set.weight * set.reps < ghost.weight * ghost.reps : false;
+    const e1rm = set.kind !== "warmup" && set.weight > 0 ? Math.round(OneRM.epley(set.weight, set.reps)) : null;
     return (
-      <div className="flex items-center py-[11px]">
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={onEdit}
+        onKeyDown={(e) => e.key === "Enter" && onEdit()}
+        className="flex cursor-pointer items-center border-b border-hairline py-[11px]"
+      >
         <div className="relative w-[30px]">{Badge}{Menu}</div>
-        <div className="flex flex-1 items-center gap-2">
-          <span className="font-display text-[15px] font-bold text-ink">
+        <div className="flex flex-1 flex-wrap items-center gap-2">
+          <span className="font-display text-[15px] font-bold tabular-nums text-ink">
             {set.weight}
             <span className="ml-0.5 text-[10px] font-bold text-ink3">{unit}</span>
             <span className="mx-1">×</span>
             {set.reps}
           </span>
           {set.rir != null ? (
-            <span className={`font-display text-[11px] font-bold ${rirColorClass(set.rir)}`}>{set.rir} RIR</span>
+            <span className={`font-display text-[11px] font-bold ${rirColorClass(set.rir)}`}>RIR {set.rir}</span>
           ) : null}
+          {e1rm ? <span className="mono-num text-[11px] font-semibold text-ink3">~{e1rm}</span> : null}
           {beatGhost ? <ArrowUp size={10} strokeWidth={3} className="text-ok" /> : null}
+          {underGhost ? <ArrowDown size={10} strokeWidth={3} className="text-fade" /> : null}
         </div>
         <button
           type="button"
-          aria-label="edit set"
-          onClick={toggle}
+          aria-label={t("un-complete set")}
+          onClick={(e) => { e.stopPropagation(); void toggle(); }}
           className="flex h-[22px] w-[22px] items-center justify-center bg-ink text-white"
         >
           <Check size={12} strokeWidth={3} />
@@ -680,124 +693,192 @@ function SetRow({
     );
   }
 
-  // ---- PENDING: full input row ----
+  // ---- PENDING / CURRENT: display row — tap to open the editor ----
   return (
-    <>
-      <div className="grid grid-cols-[30px_61px_61px_64px_70px_30px] items-center gap-1.5 py-[7px]">
-        <div className="relative">{Badge}{Menu}</div>
-        <input
-          inputMode="decimal"
-          value={weight}
-          placeholder={showSuggest ? String(suggest.weight) : ghost ? String(ghost.weight) : "0"}
-          onChange={(e) => setWeight(e.target.value)}
-          onBlur={() => void updateSet(set.id, { weight: parseFloat(weight) || 0 })}
-          className="mono-num w-full border border-rule bg-card px-1.5 py-1.5 text-[15px] text-ink outline-none focus:border-ink placeholder:text-ink3/60"
-        />
-        <input
-          inputMode="numeric"
-          value={reps}
-          placeholder={showSuggest ? String(suggest.reps) : ghost ? String(ghost.reps) : "0"}
-          onChange={(e) => setReps(e.target.value)}
-          onBlur={() => void updateSet(set.id, { reps: parseInt(reps, 10) || 0 })}
-          className="mono-num w-full border border-rule bg-card px-1.5 py-1.5 text-[15px] text-ink outline-none focus:border-ink placeholder:text-ink3/60"
-        />
-        <div className="relative">
-          <button
-            type="button"
-            aria-label="RIR"
-            onClick={() => setRirMenu((v) => !v)}
-            className={`mono-num w-full border border-rule bg-card px-1 py-1.5 text-center text-[14px] font-semibold ${
-              rir.trim() !== "" ? rirColorClass(rirVal) : "text-ink3/50"
-            }`}
-          >
-            {rir.trim() !== "" ? rirVal : showSuggest ? suggest.rir : ghost?.rir != null ? ghost.rir : "–"}
-          </button>
-          {rirMenu ? (
-            <>
-              <div className="fixed inset-0 z-10" onClick={() => setRirMenu(false)} />
-              <div className="absolute right-0 top-9 z-20 w-64 border border-ink bg-card">
-                <p className="border-b border-rule px-3 py-1.5 text-[9px] font-bold uppercase tracking-[0.1em] text-ink3">
-                  {t("rir.title")}
-                </p>
-                {RIR_OPTIONS.map((o) => (
-                  <button
-                    key={o.value}
-                    type="button"
-                    onClick={() => {
-                      setRir(String(o.value));
-                      void updateSet(set.id, { rir: o.value });
-                      setRirMenu(false);
-                    }}
-                    className={`flex w-full items-baseline gap-2.5 px-3 py-2 text-left ${o.value === rirVal ? "bg-chip" : ""}`}
-                  >
-                    <span className={`mono-num w-5 shrink-0 text-[13px] font-bold ${rirColorClass(o.value)}`}>{o.label}</span>
-                    <span className="text-[11px] leading-snug text-ink2">{t(o.explainKey)}</span>
-                  </button>
-                ))}
-                {rir.trim() !== "" ? (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setRir("");
-                      void updateSet(set.id, { rir: undefined });
-                      setRirMenu(false);
-                    }}
-                    className="block w-full border-t border-rule px-3 py-2 text-left text-[11px] text-ink3"
-                  >
-                    {t("Clear")}
-                  </button>
-                ) : null}
-              </div>
-            </>
-          ) : null}
-        </div>
-        {ghost ? (
-          <span className="text-right leading-tight">
-            <span className="mono-num block text-[11px] text-ink2">{ghost.weight}×{ghost.reps}</span>
-            <span className="block text-[9px] font-semibold text-ink3">
-              {ghost.rir != null ? `${ghost.rir} RIR` : " "}
-            </span>
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={onEdit}
+      onKeyDown={(e) => e.key === "Enter" && onEdit()}
+      className="grid cursor-pointer grid-cols-[30px_1fr_1fr_64px_70px_30px] items-center gap-1.5 border-b border-hairline py-[11px]"
+      style={
+        active
+          ? { background: "linear-gradient(90deg, transparent 0%, #F3DCCF 50%, transparent 100%)" }
+          : undefined
+      }
+    >
+      <div className="relative">{Badge}{Menu}</div>
+      <span className={`font-display text-[16px] font-bold tabular-nums ${active ? "text-ink" : "text-ink3"}`}>
+        {dispWeight || "—"}
+        {dispWeight ? <span className="ml-0.5 text-[10px] font-semibold text-ink3">{unit}</span> : null}
+      </span>
+      <span className={`font-display text-[16px] font-bold tabular-nums ${active ? "text-ink" : "text-ink3"}`}>
+        {dispReps || "—"}
+      </span>
+      <span
+        className={`text-[11px] font-bold tabular-nums ${
+          set.rir != null ? rirColorClass(set.rir) : dispRir != null ? "text-ink3" : "text-ink3/60"
+        }`}
+      >
+        {dispRir != null ? `RIR ${dispRir}` : "—"}
+      </span>
+      {ghost ? (
+        <span className="text-right leading-tight">
+          <span className="mono-num block text-[11px] tabular-nums text-ink2">{ghost.weight}×{ghost.reps}</span>
+          <span className="block text-[9px] font-semibold uppercase tracking-[0.06em] text-ink3">{t("prev")}</span>
+        </span>
+      ) : (
+        <span className="text-right text-ink3/40">·</span>
+      )}
+      <button
+        type="button"
+        aria-label={t("complete set")}
+        onClick={(e) => { e.stopPropagation(); void toggle(); }}
+        className="flex h-[22px] w-[22px] items-center justify-center justify-self-end"
+      >
+        {active ? (
+          <span className="grid h-[22px] w-[22px] place-items-center border-2 border-accent">
+            <span className="h-2 w-2 bg-accent" />
           </span>
         ) : (
-          <span className="text-right text-ink3/40">·</span>
+          <span className="h-[22px] w-[22px] border border-rule" />
         )}
+      </button>
+    </div>
+  );
+}
+
+/** Plate tier → mini visual block size for the editor's per-side strip. */
+function plateBlock(p: number, maxPlate: number): { w: number; h: number } {
+  const f = p / maxPlate;
+  return { w: Math.round(7 + f * 7), h: Math.round(18 + f * 34) };
+}
+
+/**
+ * Inline dark set editor (design: "Logging set"). Replaces the row — weight /
+ * reps / RIR steppers, per-side plate breakdown on barbell lifts, one Log tap.
+ */
+function SetEditor({
+  set,
+  initial,
+  reason,
+  equipment,
+  onCommit,
+  onCancel,
+}: {
+  set: WorkoutSet;
+  initial: { weight: number; reps: number; rir: number };
+  reason?: string;
+  equipment?: string;
+  onCommit: (v: { weight: number; reps: number; rir: number }) => void;
+  onCancel: () => void;
+}) {
+  const { t } = useTranslation();
+  const unit = weightUnit();
+  const wStep = unit === "kg" ? 2.5 : 5;
+  const [weight, setWeight] = useState(initial.weight);
+  const [reps, setReps] = useState(initial.reps);
+  const [rir, setRir] = useState(initial.rir);
+
+  const bar = unit === "kg" ? 20 : 45;
+  const maxPlate = unit === "kg" ? 25 : 45;
+  const breakdown =
+    equipment === "barbell" && weight > bar
+      ? plates(weight, bar, unit === "kg" ? STANDARD_KG_PLATES : STANDARD_LB_PLATES).perSide
+      : [];
+  const grouped: { plate: number; count: number }[] = [];
+  for (const p of breakdown) {
+    const last = grouped[grouped.length - 1];
+    if (last && last.plate === p) last.count += 1;
+    else grouped.push({ plate: p, count: 1 });
+  }
+
+  const fields = [
+    { label: t("Weight"), value: weight, step: wStep, set: (d: number) => setWeight((v) => Math.max(0, Math.round((v + d) * 100) / 100)) },
+    { label: t("Reps"), value: reps, step: 1, set: (d: number) => setReps((v) => Math.max(0, v + d)) },
+    { label: "RIR", value: rir, step: 1, set: (d: number) => setRir((v) => Math.max(0, Math.min(4, v + d))), tint: rirColorClass(rir) },
+  ];
+
+  return (
+    <div className="-mx-[22px] bg-ink px-[22px] py-4 text-white">
+      <div className="mb-3.5 flex items-baseline justify-between">
+        <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-accent">
+          {set.isCompleted ? t("Revise set") : t("Logging set")}
+          {reason ? <span className="ml-2 font-semibold normal-case tracking-normal text-white/55">{reason}</span> : null}
+        </p>
         <button
           type="button"
-          aria-label="complete set"
-          onClick={toggle}
-          className="flex h-[22px] w-[22px] items-center justify-self-end"
+          onClick={onCancel}
+          className="text-[11px] font-semibold uppercase tracking-[0.06em] text-white/55"
         >
-          {active ? (
-            <span className="m-auto h-2 w-2 bg-accent" />
-          ) : (
-            <span className="m-auto grid h-[22px] w-[22px] place-items-center border border-rule text-transparent">
-              <Check size={12} strokeWidth={3} />
-            </span>
-          )}
+          {t("Cancel")}
         </button>
       </div>
-      {active && showSuggest ? (
-        <button
-          type="button"
-          onClick={fillSuggestion}
-          className="-mx-[22px] mb-1.5 flex w-[calc(100%+44px)] items-center justify-between gap-2 bg-accentSoft/50 px-[22px] py-2 active:bg-accentSoft"
-        >
-          <span className="flex items-center gap-1.5">
-            <Sparkles size={11} strokeWidth={2.25} className="text-accent" />
-            <span className="text-[9px] font-bold uppercase tracking-[0.12em] text-ink2">{t("Suggested")}</span>
-          </span>
-          <span className="mono-num text-[13px] font-bold text-ink">
-            {suggest.weight}
-            <span className="ml-0.5 text-[10px] font-semibold text-ink3">{unit}</span>
-            <span className="mx-1">×</span>
-            {suggest.reps}
-            <span className="ml-1.5 text-[10px] font-semibold text-ink3">@ {suggest.rir} RIR</span>
-          </span>
-          <span className="text-[9px] font-bold uppercase tracking-[0.1em] text-accent">
-            {t(SUGGEST_REASON_KEY[suggest.reason])}
-          </span>
-        </button>
-      ) : null}
-    </>
+
+      <div className="grid grid-cols-3 gap-3">
+        {fields.map((f) => (
+          <div key={f.label}>
+            <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-white/55">{f.label}</p>
+            <div className="mt-1.5 flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() => f.set(-f.step)}
+                aria-label={`${f.label} −`}
+                className="h-7 w-7 shrink-0 bg-white/[0.08] font-display text-[16px] font-extrabold text-white"
+              >
+                −
+              </button>
+              <span className={`flex-1 text-center font-display text-[22px] font-extrabold tabular-nums tracking-[-0.6px] ${f.tint ?? "text-white"}`}>
+                {f.value}
+              </span>
+              <button
+                type="button"
+                onClick={() => f.set(f.step)}
+                aria-label={`${f.label} +`}
+                className="h-7 w-7 shrink-0 bg-accent font-display text-[16px] font-extrabold text-white"
+              >
+                +
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Per-side plate breakdown — barbell lifts only */}
+      {grouped.length > 0 && (
+        <div className="mt-3.5 border-t border-white/10 pt-3">
+          <div className="mb-2 flex items-baseline justify-between">
+            <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-white/55">
+              {t("Per side")} · {bar} {unit} {t("bar")}
+            </p>
+            <p className="mono-num text-[10px] tabular-nums text-white/70">
+              {grouped.map((g) => `${g.count}×${g.plate}`).join(" · ")}
+            </p>
+          </div>
+          <div className="flex items-center gap-[3px]">
+            {breakdown.map((p, i) => {
+              const { w, h } = plateBlock(p, maxPlate);
+              return (
+                <span
+                  key={i}
+                  className="grid shrink-0 place-items-center bg-accent font-display text-[10px] font-extrabold tabular-nums text-ink [text-orientation:mixed] [writing-mode:vertical-rl]"
+                  style={{ width: `${w}px`, height: `${h}px` }}
+                >
+                  {p}
+                </span>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      <button
+        type="button"
+        onClick={() => onCommit({ weight, reps, rir })}
+        className="mt-3.5 w-full bg-accent py-3.5 font-display text-[13px] font-extrabold uppercase tracking-[0.14em] text-white"
+      >
+        {set.isCompleted ? t("Save") : t("Log")} {weight} × {reps}
+      </button>
+    </div>
   );
 }
