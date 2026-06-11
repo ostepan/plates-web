@@ -2,13 +2,18 @@ import { useEffect, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { useNavigate, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { ArrowDown, ArrowUp, Check, Lightbulb, Plus, Timer, X } from "lucide-react";
+import { AnimatePresence, motion } from "framer-motion";
+import { ArrowDown, ArrowUp, Check, ChevronDown, Lightbulb, Plus, Timer, X } from "lucide-react";
 import { db } from "@core/db/db";
 import {
   addExerciseToSession, addSet, deleteSet, discardSession, finishSession, toggleSetComplete, updateSet,
 } from "@core/db/mutations";
 import { ExercisePicker } from "@app/components/ExercisePicker";
-import { bestE1RMByExercise, lastWorkingSetsByExercise } from "@core/db/analytics";
+import { bestE1RMByExercise, exerciseE1RMSeries, lastWorkingSetsByExercise } from "@core/db/analytics";
+import { Performance, type Point } from "@core/calc/performance";
+import { EXPAND, FADE_FAST, FadeSlide } from "@ui/components/motion";
+import { RIRPickerSheet, rirPaint } from "@ui/components/RIRPicker";
+import { Sparkline } from "@ui/components/Sparkline";
 import { getRecoverySettings, muscleRecovery } from "@core/db/recovery";
 import { Recovery } from "@core/calc/recovery";
 import { OneRM } from "@core/calc/oneRM";
@@ -374,6 +379,10 @@ export function ActiveWorkout() {
                     suggest={b.suggestions[i]}
                     active={s.id === activeSetId}
                     equipment={b.exercise?.equipment}
+                    exerciseId={b.exercise?.id}
+                    lastSets={b.ghost}
+                    lastDate={b.lastDate}
+                    recovery={b.recovery}
                     editing={s.id === editingSetId}
                     onEdit={() => setEditingSetId(s.id)}
                     onCloseEdit={() => setEditingSetId(null)}
@@ -553,6 +562,10 @@ function SetRow({
   suggest,
   active,
   equipment,
+  exerciseId,
+  lastSets,
+  lastDate,
+  recovery,
   editing,
   onEdit,
   onCloseEdit,
@@ -564,6 +577,10 @@ function SetRow({
   suggest?: SetSuggestion;
   active?: boolean;
   equipment?: string;
+  exerciseId?: ID;
+  lastSets: WorkoutSet[];
+  lastDate?: number;
+  recovery?: { code: string; pct: number };
   editing: boolean;
   onEdit: () => void;
   onCloseEdit: () => void;
@@ -572,6 +589,13 @@ function SetRow({
   const { t } = useTranslation();
   const unit = weightUnit();
   const [menu, setMenu] = useState(false);
+  // Briefly tint the row accent after logging, then settle.
+  const [justLogged, setJustLogged] = useState(false);
+  useEffect(() => {
+    if (!justLogged) return;
+    const h = window.setTimeout(() => setJustLogged(false), 700);
+    return () => window.clearTimeout(h);
+  }, [justLogged]);
 
   const badgeLabel = set.kind === "working" ? index + 1 : KIND_ABBR[set.kind];
   // Completed (or special kind) badge → peach + accent; plain pending → chip + ink2.
@@ -589,27 +613,47 @@ function SetRow({
       await updateSet(set.id, { weight: dispWeight, reps: dispReps });
     }
     const done = await toggleSetComplete(set.id);
+    if (done) setJustLogged(true);
     onComplete(done);
   }
 
-  // Editor takes over the row entirely (design: tap set to edit + log)
+  // Editor takes over the row entirely (design: tap set to edit + log);
+  // it unfolds out of the row and collapses back on close.
   if (editing) {
     return (
-      <SetEditor
-        set={set}
-        initial={{ weight: dispWeight, reps: dispReps, rir: dispRir ?? 2 }}
-        reason={showSuggest && !set.isCompleted ? t(SUGGEST_REASON_KEY[suggest.reason]) : undefined}
-        equipment={equipment}
-        onCancel={onCloseEdit}
-        onCommit={async (v) => {
-          await updateSet(set.id, { weight: v.weight, reps: v.reps, rir: v.rir });
-          if (!set.isCompleted) {
-            const done = await toggleSetComplete(set.id);
-            onComplete(done);
-          }
-          onCloseEdit();
-        }}
-      />
+      <AnimatePresence initial={false} mode="wait">
+        <motion.div
+          key="editor"
+          className="-mx-[22px] overflow-hidden"
+          initial={{ height: 0, opacity: 0 }}
+          animate={{ height: "auto", opacity: 1 }}
+          exit={{ height: 0, opacity: 0 }}
+          transition={EXPAND}
+        >
+          <SetEditor
+            set={set}
+            initial={{ weight: dispWeight, reps: dispReps, rir: dispRir ?? 2 }}
+            reason={showSuggest && !set.isCompleted ? t(SUGGEST_REASON_KEY[suggest.reason]) : undefined}
+            equipment={equipment}
+            exerciseId={exerciseId}
+            ghost={ghost}
+            lastSets={lastSets}
+            lastDate={lastDate}
+            recovery={recovery}
+            suggest={showSuggest && !set.isCompleted ? suggest : undefined}
+            onCancel={onCloseEdit}
+            onCommit={async (v) => {
+              await updateSet(set.id, { weight: v.weight, reps: v.reps, rir: v.rir });
+              if (!set.isCompleted) {
+                const done = await toggleSetComplete(set.id);
+                if (done) setJustLogged(true);
+                onComplete(done);
+              }
+              onCloseEdit();
+            }}
+          />
+        </motion.div>
+      </AnimatePresence>
     );
   }
 
@@ -659,12 +703,18 @@ function SetRow({
     const underGhost = ghost ? set.weight * set.reps < ghost.weight * ghost.reps : false;
     const e1rm = set.kind !== "warmup" && set.weight > 0 ? Math.round(OneRM.epley(set.weight, set.reps)) : null;
     return (
-      <div
+      <AnimatePresence initial={false} mode="wait">
+      <motion.div
+        key="done"
         role="button"
         tabIndex={0}
         onClick={onEdit}
         onKeyDown={(e) => e.key === "Enter" && onEdit()}
-        className="flex cursor-pointer items-center border-b border-hairline py-[11px]"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0, transition: FADE_FAST }}
+        transition={{ duration: 0.15 }}
+        className={`flex cursor-pointer items-center border-b border-hairline py-[11px] ${justLogged ? "animate-logflash" : ""}`}
       >
         <div className="relative w-[30px]">{Badge}{Menu}</div>
         <div className="flex flex-1 flex-wrap items-center gap-2">
@@ -689,17 +739,24 @@ function SetRow({
         >
           <Check size={12} strokeWidth={3} />
         </button>
-      </div>
+      </motion.div>
+      </AnimatePresence>
     );
   }
 
   // ---- PENDING / CURRENT: display row — tap to open the editor ----
   return (
-    <div
+    <AnimatePresence initial={false} mode="wait">
+    <motion.div
+      key="pending"
       role="button"
       tabIndex={0}
       onClick={onEdit}
       onKeyDown={(e) => e.key === "Enter" && onEdit()}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0, transition: FADE_FAST }}
+      transition={{ duration: 0.15 }}
       className="grid cursor-pointer grid-cols-[30px_1fr_1fr_64px_70px_30px] items-center gap-1.5 border-b border-hairline py-[11px]"
       style={
         active
@@ -744,7 +801,8 @@ function SetRow({
           <span className="h-[22px] w-[22px] border border-rule" />
         )}
       </button>
-    </div>
+    </motion.div>
+    </AnimatePresence>
   );
 }
 
@@ -754,37 +812,80 @@ function plateBlock(p: number, maxPlate: number): { w: number; h: number } {
   return { w: Math.round(7 + f * 7), h: Math.round(18 + f * 34) };
 }
 
+/** "102,5" / "102.5" → 102.5; empty or junk → null. */
+function parseDecimal(s: string): number | null {
+  const trimmed = s.trim().replace(",", ".");
+  if (!trimmed) return null;
+  const n = Number(trimmed);
+  return Number.isFinite(n) ? n : null;
+}
+
 /**
- * Inline dark set editor (design: "Logging set"). Replaces the row — weight /
- * reps / RIR steppers, per-side plate breakdown on barbell lifts, one Log tap.
+ * Inline dark set editor (design: "Logging set"). Replaces the row — typed
+ * weight/reps inputs, RIR dropdown, last-time/recovery/trend context strip
+ * with an e1RM sparkline, per-side plate breakdown on barbell lifts, one Log tap.
  */
 function SetEditor({
   set,
   initial,
   reason,
   equipment,
+  exerciseId,
+  ghost,
+  lastSets,
+  lastDate,
+  recovery,
+  suggest,
   onCommit,
   onCancel,
 }: {
   set: WorkoutSet;
-  initial: { weight: number; reps: number; rir: number };
+  initial: { weight: number; reps: number; rir: number | undefined };
   reason?: string;
   equipment?: string;
-  onCommit: (v: { weight: number; reps: number; rir: number }) => void;
+  exerciseId?: ID;
+  ghost?: WorkoutSet;
+  lastSets: WorkoutSet[];
+  lastDate?: number;
+  recovery?: { code: string; pct: number };
+  suggest?: SetSuggestion;
+  onCommit: (v: { weight: number; reps: number; rir: number | undefined }) => void;
   onCancel: () => void;
 }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const unit = weightUnit();
-  const wStep = unit === "kg" ? 2.5 : 5;
-  const [weight, setWeight] = useState(initial.weight);
-  const [reps, setReps] = useState(initial.reps);
-  const [rir, setRir] = useState(initial.rir);
+  const [weight, setWeight] = useState(initial.weight ? String(initial.weight) : "");
+  const [reps, setReps] = useState(initial.reps ? String(initial.reps) : "");
+  const [rir, setRir] = useState<number | undefined>(initial.rir);
+  const [rirOpen, setRirOpen] = useState(false);
+
+  const weightNum = parseDecimal(weight);
+  const repsNum = parseDecimal(reps);
+  const valid =
+    weightNum != null && weightNum >= 0 && repsNum != null && Number.isInteger(repsNum) && repsNum >= 0;
+
+  // e1RM history for the inline trend — only queried while the editor is open.
+  const series = useLiveQuery(
+    () => (exerciseId ? exerciseE1RMSeries(exerciseId) : Promise.resolve([] as Point[])),
+    [exerciseId],
+    [] as Point[],
+  );
+  const recent = series.slice(-10);
+  const velocity = Performance.velocity(series);
+  const velPerMonth = velocity ? Math.round(velocity.unitsPerMonth * 10) / 10 : null;
+
+  // Typed weight vs the lined-up set from last session.
+  const delta =
+    ghost && weightNum != null && weightNum !== ghost.weight
+      ? Math.round((weightNum - ghost.weight) * 100) / 100
+      : null;
 
   const bar = unit === "kg" ? 20 : 45;
   const maxPlate = unit === "kg" ? 25 : 45;
+  const plateWeight = weightNum ?? 0;
   const breakdown =
-    equipment === "barbell" && weight > bar
-      ? plates(weight, bar, unit === "kg" ? STANDARD_KG_PLATES : STANDARD_LB_PLATES).perSide
+    equipment === "barbell" && plateWeight > bar
+      ? plates(plateWeight, bar, unit === "kg" ? STANDARD_KG_PLATES : STANDARD_LB_PLATES).perSide
       : [];
   const grouped: { plate: number; count: number }[] = [];
   for (const p of breakdown) {
@@ -793,14 +894,12 @@ function SetEditor({
     else grouped.push({ plate: p, count: 1 });
   }
 
-  const fields = [
-    { label: t("Weight"), value: weight, step: wStep, set: (d: number) => setWeight((v) => Math.max(0, Math.round((v + d) * 100) / 100)) },
-    { label: t("Reps"), value: reps, step: 1, set: (d: number) => setReps((v) => Math.max(0, v + d)) },
-    { label: "RIR", value: rir, step: 1, set: (d: number) => setRir((v) => Math.max(0, Math.min(4, v + d))), tint: rirColorClass(rir) },
-  ];
+  const rirTint = rirPaint(rir);
+  const inputClass =
+    "mt-1.5 block h-11 w-full border border-white/15 bg-white/[0.08] text-center font-display text-[22px] font-extrabold tabular-nums tracking-[-0.6px] text-white outline-none focus:border-accent";
 
   return (
-    <div className="-mx-[22px] bg-ink px-[22px] py-4 text-white">
+    <div className="bg-ink px-[22px] py-4 text-white">
       <div className="mb-3.5 flex items-baseline justify-between">
         <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-accent">
           {set.isCompleted ? t("Revise set") : t("Logging set")}
@@ -815,34 +914,147 @@ function SetEditor({
         </button>
       </div>
 
-      <div className="grid grid-cols-3 gap-3">
-        {fields.map((f) => (
-          <div key={f.label}>
-            <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-white/55">{f.label}</p>
-            <div className="mt-1.5 flex items-center gap-1">
-              <button
-                type="button"
-                onClick={() => f.set(-f.step)}
-                aria-label={`${f.label} −`}
-                className="h-7 w-7 shrink-0 bg-white/[0.08] font-display text-[16px] font-extrabold text-white"
-              >
-                −
-              </button>
-              <span className={`flex-1 text-center font-display text-[22px] font-extrabold tabular-nums tracking-[-0.6px] ${f.tint ?? "text-white"}`}>
-                {f.value}
-              </span>
-              <button
-                type="button"
-                onClick={() => f.set(f.step)}
-                aria-label={`${f.label} +`}
-                className="h-7 w-7 shrink-0 bg-accent font-display text-[16px] font-extrabold text-white"
-              >
-                +
-              </button>
-            </div>
+      <FadeSlide>
+        <div className="grid grid-cols-3 gap-3">
+          <div>
+            <label htmlFor={`w-${set.id}`} className="text-[9px] font-bold uppercase tracking-[0.12em] text-white/55">
+              {t("Weight")} <span className="text-white/35">{unit}</span>
+            </label>
+            <input
+              id={`w-${set.id}`}
+              type="text"
+              inputMode="decimal"
+              autoComplete="off"
+              autoFocus
+              value={weight}
+              onChange={(e) => setWeight(e.target.value)}
+              onFocus={(e) => e.target.select()}
+              className={inputClass}
+            />
           </div>
-        ))}
-      </div>
+          <div>
+            <label htmlFor={`r-${set.id}`} className="text-[9px] font-bold uppercase tracking-[0.12em] text-white/55">
+              {t("Reps")}
+            </label>
+            <input
+              id={`r-${set.id}`}
+              type="text"
+              inputMode="numeric"
+              autoComplete="off"
+              value={reps}
+              onChange={(e) => setReps(e.target.value)}
+              onFocus={(e) => e.target.select()}
+              className={inputClass}
+            />
+          </div>
+          <div>
+            <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-white/55">RIR</p>
+            <button
+              type="button"
+              aria-haspopup="dialog"
+              aria-expanded={rirOpen}
+              onClick={() => setRirOpen(true)}
+              className={`mt-1.5 flex h-11 w-full items-center justify-center gap-1.5 border bg-white/[0.08] font-display text-[22px] font-extrabold tabular-nums tracking-[-0.6px] ${
+                rir != null ? `${rirTint.ring} ${rirTint.text}` : "border-white/15 text-white/45"
+              }`}
+            >
+              {rir != null ? (rir >= 4 ? "4+" : rir) : "—"}
+              <ChevronDown size={14} strokeWidth={2.5} className="text-white/45" />
+            </button>
+          </div>
+        </div>
+
+        {suggest && !set.isCompleted ? (
+          <button
+            type="button"
+            onClick={() => {
+              setWeight(String(suggest.weight));
+              setReps(String(suggest.reps));
+              if (suggest.rir != null) setRir(suggest.rir);
+            }}
+            className="mt-2.5 inline-flex items-center gap-1.5 border border-white/20 px-2 py-1 active:border-accent"
+          >
+            <span className="text-[9px] font-bold uppercase tracking-[0.08em] text-white/45">{t("Suggested")}</span>
+            <span className="mono-num text-[11px] font-bold tabular-nums text-white/80">
+              {suggest.weight}×{suggest.reps}
+              {suggest.rir != null ? ` @${suggest.rir}` : ""}
+            </span>
+          </button>
+        ) : null}
+      </FadeSlide>
+
+      {/* Context strip: last session, recovery, e1RM trend + sparkline */}
+      {lastSets.length > 0 || recovery || recent.length >= 2 ? (
+        <FadeSlide delay={0.05}>
+          <div className="mt-3.5 border-t border-white/10 pt-3">
+            <div className="grid grid-cols-3 gap-3">
+              <div>
+                <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-white/45">{t("Last")}</p>
+                {lastSets.length ? (
+                  <>
+                    <p className="mono-num mt-0.5 text-[12px] font-bold tabular-nums text-white">{lastSummary(lastSets)}</p>
+                    <p className="mt-0.5 text-[9px] text-white/45">
+                      {lastDate != null ? relativeDay(lastDate, i18n.language) : ""}
+                      {delta != null ? (
+                        <span className={`ml-1.5 font-bold ${delta > 0 ? "text-ok" : "text-fade"}`}>
+                          {delta > 0 ? "+" : ""}
+                          {delta} {unit}
+                        </span>
+                      ) : null}
+                    </p>
+                  </>
+                ) : (
+                  <p className="mt-0.5 text-[12px] text-white/35">—</p>
+                )}
+              </div>
+              <div>
+                <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-white/45">{t("Recovery")}</p>
+                {recovery ? (
+                  <>
+                    <p className={`mt-0.5 text-[12px] font-bold tabular-nums ${recoveryColor(recovery.pct)}`}>
+                      {recovery.code} {recovery.pct}%
+                    </p>
+                    <span className="mt-1 block h-[3px] w-12 overflow-hidden bg-white/15">
+                      <span
+                        className={`block h-full ${recoveryBarClass(recovery.pct)}`}
+                        style={{ width: `${Math.max(0, Math.min(100, recovery.pct))}%` }}
+                      />
+                    </span>
+                  </>
+                ) : (
+                  <p className="mt-0.5 text-[12px] text-white/35">—</p>
+                )}
+              </div>
+              <div>
+                <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-white/45">{t("Trend")}</p>
+                {velPerMonth != null ? (
+                  <p
+                    className={`mt-0.5 text-[12px] font-bold tabular-nums ${
+                      velPerMonth > 0 ? "text-ok" : velPerMonth < 0 ? "text-fade" : "text-white/70"
+                    }`}
+                  >
+                    {velPerMonth > 0 ? "+" : ""}
+                    {velPerMonth}/{t("mo")}
+                  </p>
+                ) : (
+                  <p className="mt-0.5 text-[12px] text-white/35">—</p>
+                )}
+              </div>
+            </div>
+            {recent.length >= 2 ? (
+              <div className="mt-2.5">
+                <Sparkline
+                  points={recent}
+                  height={44}
+                  areaClass="fill-white/[0.06]"
+                  strokeClass="stroke-accent"
+                  dotClass="fill-white/70"
+                />
+              </div>
+            ) : null}
+          </div>
+        </FadeSlide>
+      ) : null}
 
       {/* Per-side plate breakdown — barbell lifts only */}
       {grouped.length > 0 && (
@@ -874,11 +1086,15 @@ function SetEditor({
 
       <button
         type="button"
-        onClick={() => onCommit({ weight, reps, rir })}
-        className="mt-3.5 w-full bg-accent py-3.5 font-display text-[13px] font-extrabold uppercase tracking-[0.14em] text-white"
+        disabled={!valid}
+        onClick={() => valid && onCommit({ weight: weightNum, reps: repsNum, rir })}
+        className="mt-3.5 w-full bg-accent py-3.5 font-display text-[13px] font-extrabold uppercase tracking-[0.14em] text-white disabled:opacity-40"
       >
-        {set.isCompleted ? t("Save") : t("Log")} {weight} × {reps}
+        {set.isCompleted ? t("Save") : t("Log")}
+        {valid ? ` ${weightNum} × ${repsNum}` : ""}
       </button>
+
+      <RIRPickerSheet open={rirOpen} value={rir} onChange={setRir} onClose={() => setRirOpen(false)} />
     </div>
   );
 }

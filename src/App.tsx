@@ -3,6 +3,7 @@ import {
   type ComponentType, type ReactNode,
 } from "react";
 import { BrowserRouter, Navigate, Outlet, Route, Routes } from "react-router-dom";
+import { MotionConfig } from "framer-motion";
 import { useTranslation } from "react-i18next";
 import { IronTabBar } from "@ui/components/IronTabBar";
 import { seedIfNeeded } from "@core/db/seed";
@@ -123,6 +124,7 @@ export function App() {
   }
 
   return (
+    <MotionConfig reducedMotion="user">
     <BrowserRouter basename={import.meta.env.BASE_URL}>
       <ErrorBoundary>
       <Suspense
@@ -168,5 +170,6 @@ export function App() {
       </Suspense>
       </ErrorBoundary>
     </BrowserRouter>
+    </MotionConfig>
   );
 }
