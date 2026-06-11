@@ -618,17 +618,18 @@ function SetRow({
   }
 
   // Editor takes over the row entirely (design: tap set to edit + log);
-  // it unfolds out of the row and collapses back on close.
+  // it morphs out of the row — starting at row height, not zero — and
+  // collapses back into it on close.
   if (editing) {
     return (
       <AnimatePresence initial={false} mode="wait">
         <motion.div
           key="editor"
           className="-mx-[22px] overflow-hidden"
-          initial={{ height: 0, opacity: 0 }}
+          initial={{ height: 48, opacity: 0 }}
           animate={{ height: "auto", opacity: 1 }}
-          exit={{ height: 0, opacity: 0 }}
-          transition={EXPAND}
+          exit={{ height: 48, opacity: 0 }}
+          transition={{ height: EXPAND, opacity: { duration: 0.16, ease: "easeOut" } }}
         >
           <SetEditor
             set={set}
@@ -864,12 +865,22 @@ function SetEditor({
   const valid =
     weightNum != null && weightNum >= 0 && repsNum != null && Number.isInteger(repsNum) && repsNum >= 0;
 
-  // e1RM history for the inline trend — only queried while the editor is open.
-  const series = useLiveQuery(
-    () => (exerciseId ? exerciseE1RMSeries(exerciseId) : Promise.resolve([] as Point[])),
-    [exerciseId],
-    [] as Point[],
+  // e1RM history for the inline trend — only queried while the editor is open,
+  // and deferred until the expand animation has settled so the full-history
+  // scan can't steal frames from it.
+  const [historyReady, setHistoryReady] = useState(false);
+  useEffect(() => {
+    const h = window.setTimeout(() => setHistoryReady(true), 380);
+    return () => window.clearTimeout(h);
+  }, []);
+  const seriesRaw = useLiveQuery(
+    () => (historyReady && exerciseId ? exerciseE1RMSeries(exerciseId) : Promise.resolve(null)),
+    [historyReady, exerciseId],
   );
+  // null/undefined = still loading — render nothing rather than flashing
+  // the "no history" hint at exercises that do have history.
+  const seriesKnown = Array.isArray(seriesRaw);
+  const series = seriesKnown ? seriesRaw : ([] as Point[]);
   const recent = series.slice(-10);
   const velocity = Performance.velocity(series);
   const velPerMonth = velocity ? Math.round(velocity.unitsPerMonth * 10) / 10 : null;
@@ -895,8 +906,10 @@ function SetEditor({
   }
 
   const rirTint = rirPaint(rir);
+  // appearance-none + rounded-none: iOS Safari otherwise rounds the inputs,
+  // leaving them visibly mismatched against the square RIR button.
   const inputClass =
-    "mt-1.5 block h-11 w-full border border-white/15 bg-white/[0.08] text-center font-display text-[22px] font-extrabold tabular-nums tracking-[-0.6px] text-white outline-none focus:border-accent";
+    "mt-1.5 block h-11 w-full appearance-none rounded-none border border-white/15 bg-white/[0.08] text-center font-display text-[22px] font-extrabold tabular-nums tracking-[-0.6px] text-white outline-none focus:border-accent";
 
   return (
     <div className="bg-ink px-[22px] py-4 text-white">
@@ -914,7 +927,7 @@ function SetEditor({
         </button>
       </div>
 
-      <FadeSlide>
+      <FadeSlide delay={0.06}>
         <div className="grid grid-cols-3 gap-3">
           <div>
             <label htmlFor={`w-${set.id}`} className="text-[9px] font-bold uppercase tracking-[0.12em] text-white/55">
@@ -925,7 +938,6 @@ function SetEditor({
               type="text"
               inputMode="decimal"
               autoComplete="off"
-              autoFocus
               value={weight}
               onChange={(e) => setWeight(e.target.value)}
               onFocus={(e) => e.target.select()}
@@ -983,78 +995,84 @@ function SetEditor({
         ) : null}
       </FadeSlide>
 
-      {/* Context strip: last session, recovery, e1RM trend + sparkline */}
-      {lastSets.length > 0 || recovery || recent.length >= 2 ? (
-        <FadeSlide delay={0.05}>
-          <div className="mt-3.5 border-t border-white/10 pt-3">
-            <div className="grid grid-cols-3 gap-3">
-              <div>
-                <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-white/45">{t("Last")}</p>
-                {lastSets.length ? (
-                  <>
-                    <p className="mono-num mt-0.5 text-[12px] font-bold tabular-nums text-white">{lastSummary(lastSets)}</p>
-                    <p className="mt-0.5 text-[9px] text-white/45">
-                      {lastDate != null ? relativeDay(lastDate, i18n.language) : ""}
-                      {delta != null ? (
-                        <span className={`ml-1.5 font-bold ${delta > 0 ? "text-ok" : "text-fade"}`}>
-                          {delta > 0 ? "+" : ""}
-                          {delta} {unit}
-                        </span>
-                      ) : null}
-                    </p>
-                  </>
-                ) : (
-                  <p className="mt-0.5 text-[12px] text-white/35">—</p>
-                )}
-              </div>
-              <div>
-                <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-white/45">{t("Recovery")}</p>
-                {recovery ? (
-                  <>
-                    <p className={`mt-0.5 text-[12px] font-bold tabular-nums ${recoveryColor(recovery.pct)}`}>
-                      {recovery.code} {recovery.pct}%
-                    </p>
-                    <span className="mt-1 block h-[3px] w-12 overflow-hidden bg-white/15">
-                      <span
-                        className={`block h-full ${recoveryBarClass(recovery.pct)}`}
-                        style={{ width: `${Math.max(0, Math.min(100, recovery.pct))}%` }}
-                      />
+      {/* Context strip: last session, recovery, e1RM trend + sparkline.
+          Always rendered — placeholders make the feature discoverable on
+          fresh exercises instead of silently disappearing. */}
+      <div className="mt-3.5 border-t border-white/10 pt-3">
+        <div className="grid grid-cols-3 gap-3">
+          <FadeSlide delay={0.16}>
+            <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-white/45">{t("Last")}</p>
+            {lastSets.length ? (
+              <>
+                <p className="mono-num mt-0.5 text-[12px] font-bold tabular-nums text-white">{lastSummary(lastSets)}</p>
+                <p className="mt-0.5 text-[9px] text-white/45">
+                  {lastDate != null ? relativeDay(lastDate, i18n.language) : ""}
+                  {delta != null ? (
+                    <span className={`ml-1.5 font-bold ${delta > 0 ? "text-ok" : "text-fade"}`}>
+                      {delta > 0 ? "+" : ""}
+                      {delta} {unit}
                     </span>
-                  </>
-                ) : (
-                  <p className="mt-0.5 text-[12px] text-white/35">—</p>
-                )}
-              </div>
-              <div>
-                <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-white/45">{t("Trend")}</p>
-                {velPerMonth != null ? (
-                  <p
-                    className={`mt-0.5 text-[12px] font-bold tabular-nums ${
-                      velPerMonth > 0 ? "text-ok" : velPerMonth < 0 ? "text-fade" : "text-white/70"
-                    }`}
-                  >
-                    {velPerMonth > 0 ? "+" : ""}
-                    {velPerMonth}/{t("mo")}
-                  </p>
-                ) : (
-                  <p className="mt-0.5 text-[12px] text-white/35">—</p>
-                )}
-              </div>
-            </div>
+                  ) : null}
+                </p>
+              </>
+            ) : (
+              <p className="mt-0.5 text-[12px] text-white/35">—</p>
+            )}
+          </FadeSlide>
+          <FadeSlide delay={0.22}>
+            <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-white/45">{t("Recovery")}</p>
+            {recovery ? (
+              <>
+                <p className={`mt-0.5 text-[12px] font-bold tabular-nums ${recoveryColor(recovery.pct)}`}>
+                  {recovery.code} {recovery.pct}%
+                </p>
+                <span className="mt-1 block h-[3px] w-12 overflow-hidden bg-white/15">
+                  <motion.span
+                    className={`block h-full ${recoveryBarClass(recovery.pct)}`}
+                    initial={{ width: 0 }}
+                    animate={{ width: `${Math.max(0, Math.min(100, recovery.pct))}%` }}
+                    transition={{ duration: 0.5, ease: "easeOut", delay: 0.3 }}
+                  />
+                </span>
+              </>
+            ) : (
+              <p className="mt-0.5 text-[12px] text-white/35">—</p>
+            )}
+          </FadeSlide>
+          <FadeSlide delay={0.28}>
+            <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-white/45">{t("Trend")}</p>
+            {velPerMonth != null ? (
+              <p
+                className={`mt-0.5 text-[12px] font-bold tabular-nums ${
+                  velPerMonth > 0 ? "text-ok" : velPerMonth < 0 ? "text-fade" : "text-white/70"
+                }`}
+              >
+                {velPerMonth > 0 ? "+" : ""}
+                {velPerMonth}/{t("mo")}
+              </p>
+            ) : (
+              <p className="mt-0.5 text-[12px] text-white/35">—</p>
+            )}
+          </FadeSlide>
+        </div>
+        {seriesKnown ? (
+          <FadeSlide className="mt-2.5">
             {recent.length >= 2 ? (
-              <div className="mt-2.5">
-                <Sparkline
-                  points={recent}
-                  height={44}
-                  areaClass="fill-white/[0.06]"
-                  strokeClass="stroke-accent"
-                  dotClass="fill-white/70"
-                />
-              </div>
-            ) : null}
-          </div>
-        </FadeSlide>
-      ) : null}
+              <Sparkline
+                points={recent}
+                height={44}
+                areaClass="fill-white/[0.06]"
+                strokeClass="stroke-accent"
+                dotClass="fill-white/70"
+              />
+            ) : (
+              <p className="border-t border-dashed border-white/15 pt-1.5 text-[9px] font-semibold uppercase tracking-[0.08em] text-white/30">
+                {t("No history yet")}
+              </p>
+            )}
+          </FadeSlide>
+        ) : null}
+      </div>
 
       {/* Per-side plate breakdown — barbell lifts only */}
       {grouped.length > 0 && (
@@ -1067,32 +1085,36 @@ function SetEditor({
               {grouped.map((g) => `${g.count}×${g.plate}`).join(" · ")}
             </p>
           </div>
-          <div className="flex items-center gap-[3px]">
+          <div className="flex items-end gap-[3px]">
             {breakdown.map((p, i) => {
               const { w, h } = plateBlock(p, maxPlate);
               return (
-                <span
+                <motion.span
                   key={i}
-                  className="grid shrink-0 place-items-center bg-accent font-display text-[10px] font-extrabold tabular-nums text-ink [text-orientation:mixed] [writing-mode:vertical-rl]"
+                  className="grid shrink-0 origin-bottom place-items-center bg-accent font-display text-[10px] font-extrabold tabular-nums text-ink [text-orientation:mixed] [writing-mode:vertical-rl]"
                   style={{ width: `${w}px`, height: `${h}px` }}
+                  initial={{ opacity: 0, scaleY: 0.4 }}
+                  animate={{ opacity: 1, scaleY: 1 }}
+                  transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1], delay: i * 0.04 }}
                 >
                   {p}
-                </span>
+                </motion.span>
               );
             })}
           </div>
         </div>
       )}
 
-      <button
+      <motion.button
         type="button"
         disabled={!valid}
         onClick={() => valid && onCommit({ weight: weightNum, reps: repsNum, rir })}
+        whileTap={{ scale: 0.97 }}
         className="mt-3.5 w-full bg-accent py-3.5 font-display text-[13px] font-extrabold uppercase tracking-[0.14em] text-white disabled:opacity-40"
       >
         {set.isCompleted ? t("Save") : t("Log")}
         {valid ? ` ${weightNum} × ${repsNum}` : ""}
-      </button>
+      </motion.button>
 
       <RIRPickerSheet open={rirOpen} value={rir} onChange={setRir} onClose={() => setRirOpen(false)} />
     </div>
