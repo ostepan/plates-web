@@ -24,14 +24,17 @@ test("tap set → editor → log → rest bar + floating timer", async ({ page }
   await page.locator("[role=button]").filter({ hasText: "—" }).first().click();
   await expect(page.getByText("LOGGING SET")).toBeVisible();
 
-  // bump weight + reps with the steppers, then log
-  for (let i = 0; i < 3; i++) await page.getByRole("button", { name: "Weight +" }).click();
-  for (let i = 0; i < 5; i++) await page.getByRole("button", { name: "Reps +" }).click();
+  // type weight + reps, pick RIR from the dropdown sheet, then log
+  await page.locator('input[inputmode="decimal"]').fill("7.5");
+  await page.locator('input[inputmode="numeric"]').fill("5");
+  await page.locator('button[aria-haspopup="dialog"]').click();
+  await page.getByRole("dialog").getByRole("option").filter({ hasText: "very hard" }).click();
   await page.getByRole("button", { name: /^LOG 7.5 × 5$/i }).click();
 
   // editor closes, row is compact-done, rest bar runs
   await expect(page.getByText("LOGGING SET")).toBeHidden();
   await expect(page.getByText(/7\.5kg×5/)).toBeVisible();
+  await expect(page.getByText("RIR 1", { exact: true })).toBeVisible();
   await expect(page.getByText("REST", { exact: true })).toBeVisible();
 
   // navigate away mid-rest → floating timer pill appears, tap returns to workout

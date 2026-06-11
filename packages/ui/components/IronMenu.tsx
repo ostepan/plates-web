@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from "react";
+import { AnimatePresence, motion } from "framer-motion";
 import { MoreVertical } from "lucide-react";
 
 export interface IronMenuItem {
@@ -31,11 +32,17 @@ export function IronMenu({ items, label = "More", align = "right" }: {
       >
         <MoreVertical size={18} strokeWidth={2.25} />
       </button>
+      <AnimatePresence>
       {open && (
         <>
           <div className="fixed inset-0 z-30" onClick={() => setOpen(false)} />
-          <div
+          <motion.div
             role="menu"
+            initial={{ opacity: 0, scale: 0.95, y: -4 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.95, y: -4, transition: { duration: 0.1 } }}
+            transition={{ duration: 0.15, ease: [0.16, 1, 0.3, 1] }}
+            style={{ transformOrigin: align === "right" ? "top right" : "top left" }}
             className={`absolute top-9 z-40 min-w-40 border border-ink bg-card shadow-[0_8px_24px_rgba(23,22,20,0.16)] ${
               align === "right" ? "right-0" : "left-0"
             }`}
@@ -54,9 +61,10 @@ export function IronMenu({ items, label = "More", align = "right" }: {
                 <span className="font-display font-semibold">{it.label}</span>
               </button>
             ))}
-          </div>
+          </motion.div>
         </>
       )}
+      </AnimatePresence>
     </div>
   );
 }

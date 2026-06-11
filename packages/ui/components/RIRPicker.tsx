@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { AnimatePresence, motion } from "framer-motion";
 import { Check } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
@@ -121,8 +122,6 @@ export function RIRPickerSheet({
     return () => window.removeEventListener("keydown", handler);
   }, [open, onClose]);
 
-  if (!open) return null;
-
   const pick = (next: number | undefined) => {
     onChange(next);
     onClose();
@@ -138,16 +137,26 @@ export function RIRPickerSheet({
   ];
 
   return (
-    <div
+    <AnimatePresence>
+    {open && (
+    <motion.div
       className="fixed inset-0 z-40 flex items-end justify-center bg-ink/40 sm:items-center"
       onClick={onClose}
       role="dialog"
       aria-modal="true"
       aria-label={t("rir.title")}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.15 }}
     >
-      <div
+      <motion.div
         className="w-full max-w-md border border-ink bg-card pb-[env(safe-area-inset-bottom)] shadow-lg"
         onClick={(e) => e.stopPropagation()}
+        initial={{ y: 56 }}
+        animate={{ y: 0 }}
+        exit={{ y: 56 }}
+        transition={{ duration: 0.24, ease: [0.16, 1, 0.3, 1] }}
       >
         <div className="border-b border-hairline px-4 py-3">
           <p className="font-display text-[15px] font-bold text-ink">{t("rir.title")}</p>
@@ -204,7 +213,9 @@ export function RIRPickerSheet({
             );
           })}
         </ul>
-      </div>
-    </div>
+      </motion.div>
+    </motion.div>
+    )}
+    </AnimatePresence>
   );
 }

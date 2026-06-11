@@ -45,6 +45,15 @@ export default {
         none: "0",
         iron: "4px",
       },
+      keyframes: {
+        logflash: {
+          "0%": { backgroundColor: "rgba(198,77,42,0.22)" },
+          "100%": { backgroundColor: "transparent" },
+        },
+      },
+      animation: {
+        logflash: "logflash 0.7s ease-out",
+      },
     },
   },
   plugins: [],

@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
+import { motion } from "framer-motion";
 import { useTranslation } from "react-i18next";
 import { Search, X } from "lucide-react";
 import { db } from "@core/db/db";
@@ -39,7 +40,12 @@ export function ExercisePicker({
   }, [exercises, query, muscle, i18n.language]);
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-bg">
+    <motion.div
+      className="fixed inset-0 z-50 flex flex-col bg-bg"
+      initial={{ opacity: 0, y: 28 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+    >
       <header className="flex items-center gap-3 border-b border-hairline px-4 pt-[max(0.5rem,env(safe-area-inset-top))] pb-2.5">
         <h1 className="display-title text-[22px]">{t("Pick exercise")}</h1>
         <div className="flex-1" />
@@ -98,7 +104,7 @@ export function ExercisePicker({
           </li>
         ))}
       </ul>
-    </div>
+    </motion.div>
   );
 }
 

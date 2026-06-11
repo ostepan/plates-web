@@ -13,6 +13,7 @@ import { programOwnedRoutineIds } from "@core/db/queries";
 import { MUSCLE_I18N_KEY } from "@core/models/enums";
 import type { Point } from "@core/calc/performance";
 import { IronTopBar, IronToolbarButton } from "@ui/components/IronTopBar";
+import { Sparkline } from "@ui/components/Sparkline";
 import { formatDuration, localizedExerciseName, relativeDay, weightUnit } from "@app/lib/format";
 import { useGoBack } from "@app/hooks/useGoBack";
 
@@ -355,26 +356,3 @@ function MetaRow({ label, value, mono }: { label: string; value: string; mono?: 
   );
 }
 
-/** e1RM line chart — area fill + per-session dots, matching the Iron MiniChart. */
-function Sparkline({ points }: { points: Point[] }) {
-  const w = 320;
-  const h = 96;
-  const pad = 5;
-  const values = points.map((p) => p.value);
-  const min = Math.min(...values);
-  const max = Math.max(...values);
-  const span = max - min || 1;
-  const x = (i: number) => pad + (i / (points.length - 1)) * (w - 2 * pad);
-  const y = (v: number) => h - pad - ((v - min) / span) * (h - 2 * pad);
-  const d = points.map((p, i) => `${i === 0 ? "M" : "L"}${x(i).toFixed(1)},${y(p.value).toFixed(1)}`).join(" ");
-  const area = `${d} L${x(points.length - 1).toFixed(1)},${h - pad} L${x(0).toFixed(1)},${h - pad} Z`;
-  return (
-    <svg viewBox={`0 0 ${w} ${h}`} className="w-full" role="img" aria-label="e1RM">
-      <path d={area} className="fill-accentSoft" />
-      <path d={d} fill="none" stroke="#171614" strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />
-      {points.map((p, i) => (
-        <circle key={i} cx={x(i)} cy={y(p.value)} r="2.5" className="fill-ink" />
-      ))}
-    </svg>
-  );
-}

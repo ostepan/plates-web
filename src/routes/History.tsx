@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
+import { motion } from "framer-motion";
 import { ChevronLeft, ChevronRight, Search, Trophy } from "lucide-react";
 import { historyRows, type HistoryRow } from "@core/db/analytics";
 import { IronTopBar, IronToolbarButton } from "@ui/components/IronTopBar";
@@ -108,10 +109,16 @@ export function HistoryList() {
                   </p>
                 </div>
                 <ul className="px-[22px]">
-                  {m.sessions.map((s) => {
+                  {m.sessions.map((s, i) => {
                     const d = new Date(s.date);
                     return (
-                      <li key={s.id} className="border-t border-hairline">
+                      <motion.li
+                        key={s.id}
+                        className="border-t border-hairline"
+                        initial={{ opacity: 0, y: 8 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1], delay: Math.min(i, 10) * 0.025 }}
+                      >
                         <button
                           type="button"
                           onClick={() => navigate(`/history/${s.id}`)}
@@ -144,7 +151,7 @@ export function HistoryList() {
                           </span>
                           <ChevronRight size={14} strokeWidth={2.25} className="shrink-0 text-ink3" />
                         </button>
-                      </li>
+                      </motion.li>
                     );
                   })}
                 </ul>

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
+import { motion } from "framer-motion";
 import { Brain, ChevronLeft, Flame, Moon, Settings, Utensils, Zap } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { markMuscleReady, saveRecoveryCheckIn } from "@core/db/mutations";
@@ -168,7 +169,12 @@ function RecoveryStatus() {
                 </span>
               </div>
               <div className="mt-1.5 h-1 bg-chip">
-                <div className={`h-full ${v.bar}`} style={{ width: `${r.recoveryPercentage}%` }} />
+                <motion.div
+                  className={`h-full ${v.bar}`}
+                  initial={{ width: 0 }}
+                  animate={{ width: `${r.recoveryPercentage}%` }}
+                  transition={{ duration: 0.5, ease: "easeOut" }}
+                />
               </div>
               <div className="mt-1.5 flex items-baseline justify-between">
                 <span className={`eyebrow text-[9px] ${v.text}`}>{t(v.key)}</span>
@@ -210,7 +216,12 @@ function DetailHeadRow({ row }: { row: DetailedMuscleRecovery }) {
         {t(DETAIL_I18N_KEY[row.detail])}
       </span>
       <span className="h-[3px] w-9 shrink-0 bg-chip">
-        <span className={`block h-full ${v.bar}`} style={{ width: `${row.recoveryPercentage}%` }} />
+        <motion.span
+          className={`block h-full ${v.bar}`}
+          initial={{ width: 0 }}
+          animate={{ width: `${row.recoveryPercentage}%` }}
+          transition={{ duration: 0.5, ease: "easeOut" }}
+        />
       </span>
       <span className={`mono-num w-8 shrink-0 text-right text-[10px] font-bold ${v.text}`}>
         {Math.round(row.recoveryPercentage)}%
@@ -295,7 +306,12 @@ function RecoveryCheckIn({ onSaved }: { onSaved: () => void }) {
           )}
         </div>
         <div className="mt-3 h-1.5 bg-white/15">
-          <div className="h-full bg-accent" style={{ width: `${liveScore}%` }} />
+          <motion.div
+            className="h-full bg-accent"
+            initial={false}
+            animate={{ width: `${liveScore}%` }}
+            transition={{ duration: 0.3, ease: "easeOut" }}
+          />
         </div>
       </div>
 
