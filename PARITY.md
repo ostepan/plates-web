@@ -65,6 +65,15 @@ Implemented from the exported Iron canvas (`plates/project/index.html`):
 | Plate calc — target stepper, **bar chips**, visual plate stack w/ sleeve, grouped breakdown, dark **Loaded** bar w/ off-by | `PlateCalculator.tsx` |
 | Volume targets — RP intro copy, **"sets this wk"** per muscle, MEV/MAV/MRV color-striped cells | `VolumeTargets.tsx` |
 | Active workout — rest bar progress fill + accent top border | `ActiveWorkout.tsx` |
+| Exercise detail — Est-1RM + **True PR** 2-up, ↗ Δ-4w caption, **1M/3M/6M/1Y period selector**, area+dots chart, **Add to routine** sheet | `ExerciseDetail.tsx`, `exerciseTruePR()` |
+| Program detail — **week × day calendar grid** (done ✓ / Today / deload cells), Week·Day·Progress strip, progression-rule note, Today's-workout CTA | `ProgramDetail.tsx` |
+| Volume targets — **preset chips** (RP Hypertrophy / 5/3/1 Strength / Custom) | `applyVolumePreset`, presets exported from `seed.ts` |
+| Recovery settings — **threshold band preview bar**, deload **0.6×/0.7×/0.8× quick multipliers** | `RecoverySettings.tsx` |
+
+> Still intentionally divergent from the canvas: typed set inputs + smart suggestions
+> (vs. tap-to-edit stepper sheet), 5-segment analytics layout, select-based exercise
+> filters, and the check-in reminder toggle (web can't schedule daily notifications
+> without push infra).
 
 ## 🟡 Partial
 | Feature | iOS | Web gap |

@@ -85,6 +85,29 @@ export function RecoverySettings() {
             </li>
           ))}
         </ul>
+        {/* Band preview — where each status lands on the 0–100 scale */}
+        <div className="px-[22px] pt-3">
+          <div className="flex h-3 overflow-hidden">
+            <span className="bg-bad" style={{ width: `${s.recoveringThreshold}%` }} />
+            <span className="bg-fade" style={{ width: `${s.partiallyRecoveredThreshold - s.recoveringThreshold}%` }} />
+            <span className="bg-warn" style={{ width: `${s.mostlyRecoveredThreshold - s.partiallyRecoveredThreshold}%` }} />
+            <span className="bg-ok/70" style={{ width: `${s.readyThreshold - s.mostlyRecoveredThreshold}%` }} />
+            <span className="bg-ok" style={{ width: `${100 - s.readyThreshold}%` }} />
+          </div>
+          <div className="relative mt-1 h-4">
+            {[s.recoveringThreshold, s.partiallyRecoveredThreshold, s.mostlyRecoveredThreshold, s.readyThreshold].map(
+              (v) => (
+                <span
+                  key={v}
+                  className="mono-num absolute -translate-x-1/2 text-[9px] tabular-nums text-ink3"
+                  style={{ left: `${v}%` }}
+                >
+                  {v}
+                </span>
+              ),
+            )}
+          </div>
+        </div>
 
         {/* Secondary muscle impact */}
         <p className="eyebrow text-ink3 px-[22px] pb-1 pt-6">{t("SECONDARY MUSCLES")}</p>
@@ -176,16 +199,32 @@ export function RecoverySettings() {
             </label>
             <div>
               <span className="eyebrow text-ink3 mb-1 block text-[9px]">{t("Multiplier")}</span>
-              <Stepper
-                value={Math.round(s.deloadMultiplier * 10) / 10}
-                min={0.5}
-                max={1.5}
-                step={0.1}
-                width="w-10"
-                onChange={(v) =>
-                  void updateRecoverySettings({ deloadMultiplier: Math.round(v * 10) / 10 })
-                }
-              />
+              <div className="flex items-center gap-1.5">
+                {[0.6, 0.7, 0.8].map((m) => (
+                  <button
+                    key={m}
+                    type="button"
+                    onClick={() => void updateRecoverySettings({ deloadMultiplier: m })}
+                    className={`px-2 py-1.5 font-display text-[11px] font-bold tabular-nums ${
+                      Math.abs(s.deloadMultiplier - m) < 0.01
+                        ? "bg-ink text-white"
+                        : "border border-rule text-ink2"
+                    }`}
+                  >
+                    {m}×
+                  </button>
+                ))}
+                <Stepper
+                  value={Math.round(s.deloadMultiplier * 10) / 10}
+                  min={0.5}
+                  max={1.5}
+                  step={0.1}
+                  width="w-10"
+                  onChange={(v) =>
+                    void updateRecoverySettings({ deloadMultiplier: Math.round(v * 10) / 10 })
+                  }
+                />
+              </div>
             </div>
           </div>
           {(s.deloadStartDate || s.deloadEndDate) && (

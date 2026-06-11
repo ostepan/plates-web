@@ -722,3 +722,18 @@ export async function updateVolumeTarget(
 ): Promise<void> {
   await db.muscleVolumeTargets.update(id, { ...patch, updatedAt: now() });
 }
+
+/** Overwrite every muscle's MEV/MAV/MRV with a preset table (RP / strength block). */
+export async function applyVolumePreset(
+  preset: [MuscleGroup, number, number, number][],
+): Promise<void> {
+  await db.transaction("rw", db.muscleVolumeTargets, async () => {
+    const rows = await db.muscleVolumeTargets.toArray();
+    const byMuscle = new Map(rows.map((r) => [r.muscleGroup, r]));
+    const t = now();
+    for (const [muscleGroup, mev, mav, mrv] of preset) {
+      const row = byMuscle.get(muscleGroup);
+      if (row) await db.muscleVolumeTargets.update(row.id, { mev, mav, mrv, updatedAt: t });
+    }
+  });
+}
