@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { useNavigate, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
@@ -24,7 +24,7 @@ import type { MuscleGroup, SetKind } from "@core/models/enums";
 import { MUSCLE_I18N_KEY } from "@core/models/enums";
 import { supersetBadge } from "@core/superset";
 import { formatDuration, localizedExerciseName, relativeDay, weightUnit } from "@app/lib/format";
-import { useRestTimer } from "@app/hooks/useRestTimer";
+import { useRestTimerStore } from "@app/stores/restTimer";
 
 interface Block {
   sxId: ID;
@@ -60,7 +60,15 @@ export function ActiveWorkout() {
   const { sessionId = "" } = useParams();
   const navigate = useNavigate();
   const { t, i18n } = useTranslation();
-  const rest = useRestTimer(sessionId);
+  // Subscribe only to whether a rest is running — `remaining` ticks every
+  // second and would re-render the whole exercise list with it (it stuttered
+  // the set-editor animation). The countdown display lives in <RestBar/>.
+  const restRunning = useRestTimerStore((s) => s.endsAt != null);
+  const restStartStore = useRestTimerStore((s) => s.start);
+  const restStart = useCallback(
+    (seconds: number) => restStartStore(seconds, sessionId),
+    [restStartStore, sessionId],
+  );
   const [picking, setPicking] = useState(false);
   const [editingSetId, setEditingSetId] = useState<ID | null>(null);
   const [openCues, setOpenCues] = useState<Set<ID>>(() => new Set());
@@ -148,38 +156,9 @@ export function ActiveWorkout() {
     [] as Block[],
   );
 
-  const [elapsed, setElapsed] = useState(0);
-  useEffect(() => {
-    if (!session) return;
-    const tick = () => setElapsed(Math.round((Date.now() - session.createdAt) / 1000));
-    tick();
-    const h = window.setInterval(tick, 1000);
-    return () => window.clearInterval(h);
-  }, [session]);
-
-  // Free-running stopwatch (timed sets, carries, planks) — independent of the rest timer.
+  // Stopwatch visibility only — its ticking state lives inside <StopwatchBar/>
+  // so 10Hz updates can't re-render the exercise list.
   const [swOpen, setSwOpen] = useState(false);
-  const [swRunning, setSwRunning] = useState(false);
-  const [swMs, setSwMs] = useState(0);
-  const swBase = useRef(0);
-  useEffect(() => {
-    if (!swRunning) return;
-    const h = window.setInterval(() => setSwMs(Date.now() - swBase.current), 100);
-    return () => window.clearInterval(h);
-  }, [swRunning]);
-  function swToggle() {
-    if (swRunning) {
-      setSwMs(Date.now() - swBase.current);
-      setSwRunning(false);
-    } else {
-      swBase.current = Date.now() - swMs;
-      setSwRunning(true);
-    }
-  }
-  function swReset() {
-    setSwRunning(false);
-    setSwMs(0);
-  }
 
   if (session === undefined) return null;
   if (session === null) {
@@ -235,12 +214,7 @@ export function ActiveWorkout() {
             >
               <Timer size={16} strokeWidth={2.25} />
             </button>
-            <div className="text-right">
-              <p className="font-display text-[22px] font-semibold tracking-[-0.5px] tabular-nums text-ink">
-                {formatDuration(elapsed)}
-              </p>
-              <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-ink3">{t("ELAPSED")}</p>
-            </div>
+            <ElapsedClock since={session.createdAt} />
           </div>
         </div>
         <div className="grid grid-cols-3">
@@ -386,7 +360,7 @@ export function ActiveWorkout() {
                     editing={s.id === editingSetId}
                     onEdit={() => setEditingSetId(s.id)}
                     onCloseEdit={() => setEditingSetId(null)}
-                    onComplete={(done) => done && rest.start(b.restSeconds)}
+                    onComplete={(done) => done && restStart(b.restSeconds)}
                   />
                 ))}
                 <button
@@ -438,51 +412,10 @@ export function ActiveWorkout() {
         />
       )}
 
-      {(swOpen || rest.running) && (
+      {(swOpen || restRunning) && (
         <div className="absolute inset-x-0 bottom-0">
-          {swOpen && (
-            <div
-              className={`flex items-center justify-between border-t border-rule bg-ink px-5 py-3 text-white ${
-                rest.running ? "" : "pb-[max(0.75rem,env(safe-area-inset-bottom))]"
-              }`}
-            >
-              <span className="eyebrow text-[11px] text-white/60">{t("STOPWATCH")}</span>
-              <span className="mono-num text-[22px] font-bold tabular-nums">{formatStopwatch(swMs)}</span>
-              <div className="flex items-center gap-3">
-                <button type="button" onClick={swToggle} className="eyebrow text-[11px]">
-                  {swRunning ? t("PAUSE") : t("START")}
-                </button>
-                <button type="button" onClick={swReset} className="eyebrow text-[11px] text-white/70">
-                  {t("RESET")}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => { swReset(); setSwOpen(false); }}
-                  aria-label={t("Close")}
-                  className="text-white/70"
-                >
-                  <X size={14} strokeWidth={2.5} />
-                </button>
-              </div>
-            </div>
-          )}
-          {rest.running && (
-            <div className="flex items-center justify-between gap-3 border-t-2 border-accent bg-ink px-5 py-3 text-white pb-[max(0.75rem,env(safe-area-inset-bottom))]">
-              <span className="eyebrow text-[11px] text-accent">{t("REST")}</span>
-              <span className="mono-num text-[22px] font-bold">{formatDuration(rest.remaining)}</span>
-              <span className="relative h-1 min-w-0 flex-1 overflow-hidden bg-white/[0.18]">
-                <span
-                  className="absolute bottom-0 left-0 top-0 bg-accent transition-[width] duration-500 ease-linear"
-                  style={{ width: `${rest.total > 0 ? Math.max(0, Math.min(100, (rest.remaining / rest.total) * 100)) : 0}%` }}
-                />
-              </span>
-              <div className="flex items-center gap-2">
-                <button type="button" onClick={() => rest.adjust(-15)} className="mono-num text-[13px] text-white/70">−15s</button>
-                <button type="button" onClick={() => rest.adjust(15)} className="mono-num text-[13px] text-white/70">+15s</button>
-                <button type="button" onClick={rest.stop} className="eyebrow text-[11px]">{t("SKIP")}</button>
-              </div>
-            </div>
-          )}
+          {swOpen && <StopwatchBar padBottom={!restRunning} onClose={() => setSwOpen(false)} />}
+          {restRunning && <RestBar />}
         </div>
       )}
     </div>
@@ -494,6 +427,102 @@ function formatStopwatch(ms: number): string {
   const tenths = Math.floor(ms / 100);
   const s = Math.floor(tenths / 10);
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}.${tenths % 10}`;
+}
+
+/**
+ * Header session clock. Isolated so its 1Hz tick re-renders only this leaf —
+ * not the whole exercise list (which made the set-editor animation stutter).
+ */
+function ElapsedClock({ since }: { since: number }) {
+  const { t } = useTranslation();
+  const [elapsed, setElapsed] = useState(0);
+  useEffect(() => {
+    const tick = () => setElapsed(Math.round((Date.now() - since) / 1000));
+    tick();
+    const h = window.setInterval(tick, 1000);
+    return () => window.clearInterval(h);
+  }, [since]);
+  return (
+    <div className="text-right">
+      <p className="font-display text-[22px] font-semibold tracking-[-0.5px] tabular-nums text-ink">
+        {formatDuration(elapsed)}
+      </p>
+      <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-ink3">{t("ELAPSED")}</p>
+    </div>
+  );
+}
+
+/** Free-running stopwatch bar (timed sets, carries, planks) — owns its 10Hz tick. */
+function StopwatchBar({ padBottom, onClose }: { padBottom: boolean; onClose: () => void }) {
+  const { t } = useTranslation();
+  const [running, setRunning] = useState(false);
+  const [ms, setMs] = useState(0);
+  const base = useRef(0);
+  useEffect(() => {
+    if (!running) return;
+    const h = window.setInterval(() => setMs(Date.now() - base.current), 100);
+    return () => window.clearInterval(h);
+  }, [running]);
+  function toggle() {
+    if (running) {
+      setMs(Date.now() - base.current);
+      setRunning(false);
+    } else {
+      base.current = Date.now() - ms;
+      setRunning(true);
+    }
+  }
+  return (
+    <div
+      className={`flex items-center justify-between border-t border-rule bg-ink px-5 py-3 text-white ${
+        padBottom ? "pb-[max(0.75rem,env(safe-area-inset-bottom))]" : ""
+      }`}
+    >
+      <span className="eyebrow text-[11px] text-white/60">{t("STOPWATCH")}</span>
+      <span className="mono-num text-[22px] font-bold tabular-nums">{formatStopwatch(ms)}</span>
+      <div className="flex items-center gap-3">
+        <button type="button" onClick={toggle} className="eyebrow text-[11px]">
+          {running ? t("PAUSE") : t("START")}
+        </button>
+        <button
+          type="button"
+          onClick={() => { setRunning(false); setMs(0); }}
+          className="eyebrow text-[11px] text-white/70"
+        >
+          {t("RESET")}
+        </button>
+        <button type="button" onClick={onClose} aria-label={t("Close")} className="text-white/70">
+          <X size={14} strokeWidth={2.5} />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/** Rest countdown bar — subscribes to the per-second tick so the list doesn't. */
+function RestBar() {
+  const { t } = useTranslation();
+  const remaining = useRestTimerStore((s) => s.remaining);
+  const total = useRestTimerStore((s) => s.total);
+  const stop = useRestTimerStore((s) => s.stop);
+  const adjust = useRestTimerStore((s) => s.adjust);
+  return (
+    <div className="flex items-center justify-between gap-3 border-t-2 border-accent bg-ink px-5 py-3 text-white pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+      <span className="eyebrow text-[11px] text-accent">{t("REST")}</span>
+      <span className="mono-num text-[22px] font-bold">{formatDuration(remaining)}</span>
+      <span className="relative h-1 min-w-0 flex-1 overflow-hidden bg-white/[0.18]">
+        <span
+          className="absolute bottom-0 left-0 top-0 bg-accent transition-[width] duration-500 ease-linear"
+          style={{ width: `${total > 0 ? Math.max(0, Math.min(100, (remaining / total) * 100)) : 0}%` }}
+        />
+      </span>
+      <div className="flex items-center gap-2">
+        <button type="button" onClick={() => adjust(-15)} className="mono-num text-[13px] text-white/70">−15s</button>
+        <button type="button" onClick={() => adjust(15)} className="mono-num text-[13px] text-white/70">+15s</button>
+        <button type="button" onClick={stop} className="eyebrow text-[11px]">{t("SKIP")}</button>
+      </div>
+    </div>
+  );
 }
 
 function GridStat({ label, value }: { label: string; value: string }) {
@@ -869,8 +898,14 @@ function SetEditor({
   // and deferred until the expand animation has settled so the full-history
   // scan can't steal frames from it.
   const [historyReady, setHistoryReady] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    const h = window.setTimeout(() => setHistoryReady(true), 380);
+    const h = window.setTimeout(() => {
+      setHistoryReady(true);
+      // If the editor opened near the bottom edge, nudge it fully into view
+      // (only scrolls when needed) — after the expand, never during it.
+      rootRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    }, 380);
     return () => window.clearTimeout(h);
   }, []);
   const seriesRaw = useLiveQuery(
@@ -912,7 +947,7 @@ function SetEditor({
     "mt-1.5 block h-11 w-full appearance-none rounded-none border border-white/15 bg-white/[0.08] text-center font-display text-[22px] font-extrabold tabular-nums tracking-[-0.6px] text-white outline-none focus:border-accent";
 
   return (
-    <div className="bg-ink px-[22px] py-4 text-white">
+    <div ref={rootRef} className="bg-ink px-[22px] py-4 text-white">
       <div className="mb-3.5 flex items-baseline justify-between">
         <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-accent">
           {set.isCompleted ? t("Revise set") : t("Logging set")}
