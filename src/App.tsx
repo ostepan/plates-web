@@ -6,6 +6,7 @@ import { BrowserRouter, Navigate, Outlet, Route, Routes } from "react-router-dom
 import { MotionConfig } from "framer-motion";
 import { useTranslation } from "react-i18next";
 import { IronTabBar } from "@ui/components/IronTabBar";
+import { PageTransition } from "@ui/components/motion";
 import { seedIfNeeded } from "@core/db/seed";
 import { FloatingRestTimer } from "./components/FloatingRestTimer";
 import { WorkoutTab } from "./routes/WorkoutTab";
@@ -96,10 +97,21 @@ function TabLayout() {
   return (
     <div className="flex h-[100dvh] flex-col bg-bg">
       <main className="min-h-0 flex-1 overflow-y-auto">
-        <Outlet />
+        <PageTransition>
+          <Outlet />
+        </PageTransition>
       </main>
       <IronTabBar />
     </div>
+  );
+}
+
+/** Full-screen flows share the same entry transition as the tab surfaces. */
+function FlowLayout() {
+  return (
+    <PageTransition>
+      <Outlet />
+    </PageTransition>
   );
 }
 
@@ -144,6 +156,7 @@ export function App() {
         </Route>
 
         {/* Full-screen flows */}
+        <Route element={<FlowLayout />}>
         <Route path="/exercises/new" element={<CustomExerciseEditor />} />
         <Route path="/exercises/:id" element={<ExerciseDetail />} />
         <Route path="/exercises/:id/edit" element={<CustomExerciseEditor />} />
@@ -163,6 +176,7 @@ export function App() {
         <Route path="/profile/body-weight" element={<BodyWeight />} />
         <Route path="/profile/volume-targets" element={<VolumeTargets />} />
         <Route path="/profile/backup" element={<BackupRestore />} />
+        </Route>
 
         <Route path="*" element={<Navigate to="/workout" replace />} />
       </Routes>
