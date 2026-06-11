@@ -17,8 +17,27 @@ function compactVolume(n: number): string {
 }
 
 export function History() {
-  const navigate = useNavigate();
   const goBack = useGoBack("/analytics");
+  const { t } = useTranslation();
+
+  return (
+    <div className="flex h-[100dvh] flex-col bg-bg">
+      <IronTopBar
+        title={t("History")}
+        leading={
+          <IronToolbarButton onClick={goBack} label={t("Back")}>
+            <ChevronLeft size={18} strokeWidth={2.5} />
+          </IronToolbarButton>
+        }
+      />
+      <HistoryList />
+    </div>
+  );
+}
+
+/** Search + month-grouped session list — used by the /history route and the Analytics History segment. */
+export function HistoryList() {
+  const navigate = useNavigate();
   const { t, i18n } = useTranslation();
   const unit = weightUnit();
   const [query, setQuery] = useState("");
@@ -52,15 +71,7 @@ export function History() {
   }, [sessions, query, i18n.language]);
 
   return (
-    <div className="flex h-[100dvh] flex-col bg-bg">
-      <IronTopBar
-        title={t("History")}
-        leading={
-          <IronToolbarButton onClick={goBack} label={t("Back")}>
-            <ChevronLeft size={18} strokeWidth={2.5} />
-          </IronToolbarButton>
-        }
-      />
+    <>
       {sessions === undefined ? null : sessions.length === 0 ? (
         <IronEmptyState
           eyebrow={t("HISTORY · 00")}
@@ -142,6 +153,6 @@ export function History() {
           )}
         </div>
       )}
-    </div>
+    </>
   );
 }

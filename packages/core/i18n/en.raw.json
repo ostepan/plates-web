@@ -778,5 +778,16 @@
  "Loads prescribed as a percentage of your training max; raise the max each cycle.": "Loads prescribed as a percentage of your training max; raise the max each cycle.",
  "Loads autoregulated to land on the target reps-in-reserve.": "Loads autoregulated to land on the target reps-in-reserve.",
  "Replace all targets with the {{name}} preset?": "Replace all targets with the {{name}} preset?",
- "CUSTOM": "CUSTOM"
+ "CUSTOM": "CUSTOM",
+ "Logging set": "Logging set",
+ "Revise set": "Revise set",
+ "Log": "Log",
+ "prev": "prev",
+ "un-complete set": "un-complete set",
+ "complete set": "complete set",
+ "ALL": "ALL",
+ "Set type": "Set type",
+ "Delete set": "Delete set",
+ "Add weight": "Add weight",
+ "Repeat": "Repeat"
 }

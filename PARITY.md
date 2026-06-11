@@ -69,11 +69,13 @@ Implemented from the exported Iron canvas (`plates/project/index.html`):
 | Program detail — **week × day calendar grid** (done ✓ / Today / deload cells), Week·Day·Progress strip, progression-rule note, Today's-workout CTA | `ProgramDetail.tsx` |
 | Volume targets — **preset chips** (RP Hypertrophy / 5/3/1 Strength / Custom) | `applyVolumePreset`, presets exported from `seed.ts` |
 | Recovery settings — **threshold band preview bar**, deload **0.6×/0.7×/0.8× quick multipliers** | `RecoverySettings.tsx` |
+| Active workout — **tap-set-to-edit dark inline editor** (weight/reps/RIR steppers, per-side plate strip on barbell lifts, Log/Revise) with quick-log check squares; smart-suggestion prefill + reason kept inside the editor | `ActiveWorkout.tsx` (`SetEditor`), e2e `logging.spec.ts` |
+| Analytics — design's **4-segment layout** (History / Charts / Recovery / PRs) with the dense secondary Charts picker (Exercise / Volume / Compare / Stats); History + Recovery embedded as segments | `AnalyticsTab.tsx`, `HistoryList`, `RecoveryComposer`, `IronSegmented dense` |
+| Exercises tab — **muscle filter chips** (All + each group, scrollable); equipment stays a compact select | `ExercisesTab.tsx` |
 
-> Still intentionally divergent from the canvas: typed set inputs + smart suggestions
-> (vs. tap-to-edit stepper sheet), 5-segment analytics layout, select-based exercise
-> filters, and the check-in reminder toggle (web can't schedule daily notifications
-> without push infra).
+> Last remaining divergence: the design's check-in **reminder toggle** ("Daily · 8:00") —
+> the web can't schedule daily notifications without push infrastructure, so the
+> Workout-tab check-in nudge stands in for it.
 
 ## 🟡 Partial
 | Feature | iOS | Web gap |

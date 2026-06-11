@@ -1034,5 +1034,9 @@
  "Work up the rep range first, then add weight and drop back to the bottom.": "Nejdřív vyšplhej rozsah opakování, pak přidej váhu a vrať se na spodek rozsahu.",
  "Loads prescribed as a percentage of your training max; raise the max each cycle.": "Zátěže předepsané jako procento tréninkového maxima; maximum zvyšuj každý cyklus.",
  "Loads autoregulated to land on the target reps-in-reserve.": "Zátěže autoregulované tak, aby vyšly na cílové reps-in-reserve.",
- "Replace all targets with the {{name}} preset?": "Nahradit všechny cíle předvolbou {{name}}?"
+ "Replace all targets with the {{name}} preset?": "Nahradit všechny cíle předvolbou {{name}}?",
+ "Logging set": "Zápis série",
+ "Revise set": "Upravit sérii",
+ "un-complete set": "zrušit dokončení série",
+ "complete set": "dokončit sérii"
 }
