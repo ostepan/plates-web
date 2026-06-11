@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { useNavigate, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
@@ -24,7 +24,7 @@ import type { MuscleGroup, SetKind } from "@core/models/enums";
 import { MUSCLE_I18N_KEY } from "@core/models/enums";
 import { supersetBadge } from "@core/superset";
 import { formatDuration, localizedExerciseName, relativeDay, weightUnit } from "@app/lib/format";
-import { useRestTimer } from "@app/hooks/useRestTimer";
+import { useRestTimerStore } from "@app/stores/restTimer";
 
 interface Block {
   sxId: ID;
@@ -60,7 +60,15 @@ export function ActiveWorkout() {
   const { sessionId = "" } = useParams();
   const navigate = useNavigate();
   const { t, i18n } = useTranslation();
-  const rest = useRestTimer(sessionId);
+  // Subscribe only to whether a rest is running — `remaining` ticks every
+  // second and would re-render the whole exercise list with it (it stuttered
+  // the set-editor animation). The countdown display lives in <RestBar/>.
+  const restRunning = useRestTimerStore((s) => s.endsAt != null);
+  const restStartStore = useRestTimerStore((s) => s.start);
+  const restStart = useCallback(
+    (seconds: number) => restStartStore(seconds, sessionId),
+    [restStartStore, sessionId],
+  );
   const [picking, setPicking] = useState(false);
   const [editingSetId, setEditingSetId] = useState<ID | null>(null);
   const [openCues, setOpenCues] = useState<Set<ID>>(() => new Set());
@@ -148,38 +156,9 @@ export function ActiveWorkout() {
     [] as Block[],
   );
 
-  const [elapsed, setElapsed] = useState(0);
-  useEffect(() => {
-    if (!session) return;
-    const tick = () => setElapsed(Math.round((Date.now() - session.createdAt) / 1000));
-    tick();
-    const h = window.setInterval(tick, 1000);
-    return () => window.clearInterval(h);
-  }, [session]);
-
-  // Free-running stopwatch (timed sets, carries, planks) — independent of the rest timer.
+  // Stopwatch visibility only — its ticking state lives inside <StopwatchBar/>
+  // so 10Hz updates can't re-render the exercise list.
   const [swOpen, setSwOpen] = useState(false);
-  const [swRunning, setSwRunning] = useState(false);
-  const [swMs, setSwMs] = useState(0);
-  const swBase = useRef(0);
-  useEffect(() => {
-    if (!swRunning) return;
-    const h = window.setInterval(() => setSwMs(Date.now() - swBase.current), 100);
-    return () => window.clearInterval(h);
-  }, [swRunning]);
-  function swToggle() {
-    if (swRunning) {
-      setSwMs(Date.now() - swBase.current);
-      setSwRunning(false);
-    } else {
-      swBase.current = Date.now() - swMs;
-      setSwRunning(true);
-    }
-  }
-  function swReset() {
-    setSwRunning(false);
-    setSwMs(0);
-  }
 
   if (session === undefined) return null;
   if (session === null) {
@@ -235,12 +214,7 @@ export function ActiveWorkout() {
             >
               <Timer size={16} strokeWidth={2.25} />
             </button>
-            <div className="text-right">
-              <p className="font-display text-[22px] font-semibold tracking-[-0.5px] tabular-nums text-ink">
-                {formatDuration(elapsed)}
-              </p>
-              <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-ink3">{t("ELAPSED")}</p>
-            </div>
+            <ElapsedClock since={session.createdAt} />
           </div>
         </div>
         <div className="grid grid-cols-3">
@@ -386,7 +360,7 @@ export function ActiveWorkout() {
                     editing={s.id === editingSetId}
                     onEdit={() => setEditingSetId(s.id)}
                     onCloseEdit={() => setEditingSetId(null)}
-                    onComplete={(done) => done && rest.start(b.restSeconds)}
+                    onComplete={(done) => done && restStart(b.restSeconds)}
                   />
                 ))}
                 <button
@@ -438,51 +412,10 @@ export function ActiveWorkout() {
         />
       )}
 
-      {(swOpen || rest.running) && (
+      {(swOpen || restRunning) && (
         <div className="absolute inset-x-0 bottom-0">
-          {swOpen && (
-            <div
-              className={`flex items-center justify-between border-t border-rule bg-ink px-5 py-3 text-white ${
-                rest.running ? "" : "pb-[max(0.75rem,env(safe-area-inset-bottom))]"
-              }`}
-            >
-              <span className="eyebrow text-[11px] text-white/60">{t("STOPWATCH")}</span>
-              <span className="mono-num text-[22px] font-bold tabular-nums">{formatStopwatch(swMs)}</span>
-              <div className="flex items-center gap-3">
-                <button type="button" onClick={swToggle} className="eyebrow text-[11px]">
-                  {swRunning ? t("PAUSE") : t("START")}
-                </button>
-                <button type="button" onClick={swReset} className="eyebrow text-[11px] text-white/70">
-                  {t("RESET")}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => { swReset(); setSwOpen(false); }}
-                  aria-label={t("Close")}
-                  className="text-white/70"
-                >
-                  <X size={14} strokeWidth={2.5} />
-                </button>
-              </div>
-            </div>
-          )}
-          {rest.running && (
-            <div className="flex items-center justify-between gap-3 border-t-2 border-accent bg-ink px-5 py-3 text-white pb-[max(0.75rem,env(safe-area-inset-bottom))]">
-              <span className="eyebrow text-[11px] text-accent">{t("REST")}</span>
-              <span className="mono-num text-[22px] font-bold">{formatDuration(rest.remaining)}</span>
-              <span className="relative h-1 min-w-0 flex-1 overflow-hidden bg-white/[0.18]">
-                <span
-                  className="absolute bottom-0 left-0 top-0 bg-accent transition-[width] duration-500 ease-linear"
-                  style={{ width: `${rest.total > 0 ? Math.max(0, Math.min(100, (rest.remaining / rest.total) * 100)) : 0}%` }}
-                />
-              </span>
-              <div className="flex items-center gap-2">
-                <button type="button" onClick={() => rest.adjust(-15)} className="mono-num text-[13px] text-white/70">−15s</button>
-                <button type="button" onClick={() => rest.adjust(15)} className="mono-num text-[13px] text-white/70">+15s</button>
-                <button type="button" onClick={rest.stop} className="eyebrow text-[11px]">{t("SKIP")}</button>
-              </div>
-            </div>
-          )}
+          {swOpen && <StopwatchBar padBottom={!restRunning} onClose={() => setSwOpen(false)} />}
+          {restRunning && <RestBar />}
         </div>
       )}
     </div>
@@ -494,6 +427,102 @@ function formatStopwatch(ms: number): string {
   const tenths = Math.floor(ms / 100);
   const s = Math.floor(tenths / 10);
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}.${tenths % 10}`;
+}
+
+/**
+ * Header session clock. Isolated so its 1Hz tick re-renders only this leaf —
+ * not the whole exercise list (which made the set-editor animation stutter).
+ */
+function ElapsedClock({ since }: { since: number }) {
+  const { t } = useTranslation();
+  const [elapsed, setElapsed] = useState(0);
+  useEffect(() => {
+    const tick = () => setElapsed(Math.round((Date.now() - since) / 1000));
+    tick();
+    const h = window.setInterval(tick, 1000);
+    return () => window.clearInterval(h);
+  }, [since]);
+  return (
+    <div className="text-right">
+      <p className="font-display text-[22px] font-semibold tracking-[-0.5px] tabular-nums text-ink">
+        {formatDuration(elapsed)}
+      </p>
+      <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-ink3">{t("ELAPSED")}</p>
+    </div>
+  );
+}
+
+/** Free-running stopwatch bar (timed sets, carries, planks) — owns its 10Hz tick. */
+function StopwatchBar({ padBottom, onClose }: { padBottom: boolean; onClose: () => void }) {
+  const { t } = useTranslation();
+  const [running, setRunning] = useState(false);
+  const [ms, setMs] = useState(0);
+  const base = useRef(0);
+  useEffect(() => {
+    if (!running) return;
+    const h = window.setInterval(() => setMs(Date.now() - base.current), 100);
+    return () => window.clearInterval(h);
+  }, [running]);
+  function toggle() {
+    if (running) {
+      setMs(Date.now() - base.current);
+      setRunning(false);
+    } else {
+      base.current = Date.now() - ms;
+      setRunning(true);
+    }
+  }
+  return (
+    <div
+      className={`flex items-center justify-between border-t border-rule bg-ink px-5 py-3 text-white ${
+        padBottom ? "pb-[max(0.75rem,env(safe-area-inset-bottom))]" : ""
+      }`}
+    >
+      <span className="eyebrow text-[11px] text-white/60">{t("STOPWATCH")}</span>
+      <span className="mono-num text-[22px] font-bold tabular-nums">{formatStopwatch(ms)}</span>
+      <div className="flex items-center gap-3">
+        <button type="button" onClick={toggle} className="eyebrow text-[11px]">
+          {running ? t("PAUSE") : t("START")}
+        </button>
+        <button
+          type="button"
+          onClick={() => { setRunning(false); setMs(0); }}
+          className="eyebrow text-[11px] text-white/70"
+        >
+          {t("RESET")}
+        </button>
+        <button type="button" onClick={onClose} aria-label={t("Close")} className="text-white/70">
+          <X size={14} strokeWidth={2.5} />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/** Rest countdown bar — subscribes to the per-second tick so the list doesn't. */
+function RestBar() {
+  const { t } = useTranslation();
+  const remaining = useRestTimerStore((s) => s.remaining);
+  const total = useRestTimerStore((s) => s.total);
+  const stop = useRestTimerStore((s) => s.stop);
+  const adjust = useRestTimerStore((s) => s.adjust);
+  return (
+    <div className="flex items-center justify-between gap-3 border-t-2 border-accent bg-ink px-5 py-3 text-white pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+      <span className="eyebrow text-[11px] text-accent">{t("REST")}</span>
+      <span className="mono-num text-[22px] font-bold">{formatDuration(remaining)}</span>
+      <span className="relative h-1 min-w-0 flex-1 overflow-hidden bg-white/[0.18]">
+        <span
+          className="absolute bottom-0 left-0 top-0 bg-accent transition-[width] duration-500 ease-linear"
+          style={{ width: `${total > 0 ? Math.max(0, Math.min(100, (remaining / total) * 100)) : 0}%` }}
+        />
+      </span>
+      <div className="flex items-center gap-2">
+        <button type="button" onClick={() => adjust(-15)} className="mono-num text-[13px] text-white/70">−15s</button>
+        <button type="button" onClick={() => adjust(15)} className="mono-num text-[13px] text-white/70">+15s</button>
+        <button type="button" onClick={stop} className="eyebrow text-[11px]">{t("SKIP")}</button>
+      </div>
+    </div>
+  );
 }
 
 function GridStat({ label, value }: { label: string; value: string }) {
@@ -618,17 +647,18 @@ function SetRow({
   }
 
   // Editor takes over the row entirely (design: tap set to edit + log);
-  // it unfolds out of the row and collapses back on close.
+  // it morphs out of the row — starting at row height, not zero — and
+  // collapses back into it on close.
   if (editing) {
     return (
       <AnimatePresence initial={false} mode="wait">
         <motion.div
           key="editor"
           className="-mx-[22px] overflow-hidden"
-          initial={{ height: 0, opacity: 0 }}
+          initial={{ height: 48, opacity: 0 }}
           animate={{ height: "auto", opacity: 1 }}
-          exit={{ height: 0, opacity: 0 }}
-          transition={EXPAND}
+          exit={{ height: 48, opacity: 0 }}
+          transition={{ height: EXPAND, opacity: { duration: 0.16, ease: "easeOut" } }}
         >
           <SetEditor
             set={set}
@@ -864,12 +894,28 @@ function SetEditor({
   const valid =
     weightNum != null && weightNum >= 0 && repsNum != null && Number.isInteger(repsNum) && repsNum >= 0;
 
-  // e1RM history for the inline trend — only queried while the editor is open.
-  const series = useLiveQuery(
-    () => (exerciseId ? exerciseE1RMSeries(exerciseId) : Promise.resolve([] as Point[])),
-    [exerciseId],
-    [] as Point[],
+  // e1RM history for the inline trend — only queried while the editor is open,
+  // and deferred until the expand animation has settled so the full-history
+  // scan can't steal frames from it.
+  const [historyReady, setHistoryReady] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const h = window.setTimeout(() => {
+      setHistoryReady(true);
+      // If the editor opened near the bottom edge, nudge it fully into view
+      // (only scrolls when needed) — after the expand, never during it.
+      rootRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    }, 380);
+    return () => window.clearTimeout(h);
+  }, []);
+  const seriesRaw = useLiveQuery(
+    () => (historyReady && exerciseId ? exerciseE1RMSeries(exerciseId) : Promise.resolve(null)),
+    [historyReady, exerciseId],
   );
+  // null/undefined = still loading — render nothing rather than flashing
+  // the "no history" hint at exercises that do have history.
+  const seriesKnown = Array.isArray(seriesRaw);
+  const series = seriesKnown ? seriesRaw : ([] as Point[]);
   const recent = series.slice(-10);
   const velocity = Performance.velocity(series);
   const velPerMonth = velocity ? Math.round(velocity.unitsPerMonth * 10) / 10 : null;
@@ -895,11 +941,13 @@ function SetEditor({
   }
 
   const rirTint = rirPaint(rir);
+  // appearance-none + rounded-none: iOS Safari otherwise rounds the inputs,
+  // leaving them visibly mismatched against the square RIR button.
   const inputClass =
-    "mt-1.5 block h-11 w-full border border-white/15 bg-white/[0.08] text-center font-display text-[22px] font-extrabold tabular-nums tracking-[-0.6px] text-white outline-none focus:border-accent";
+    "mt-1.5 block h-11 w-full appearance-none rounded-none border border-white/15 bg-white/[0.08] text-center font-display text-[22px] font-extrabold tabular-nums tracking-[-0.6px] text-white outline-none focus:border-accent";
 
   return (
-    <div className="bg-ink px-[22px] py-4 text-white">
+    <div ref={rootRef} className="bg-ink px-[22px] py-4 text-white">
       <div className="mb-3.5 flex items-baseline justify-between">
         <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-accent">
           {set.isCompleted ? t("Revise set") : t("Logging set")}
@@ -914,7 +962,7 @@ function SetEditor({
         </button>
       </div>
 
-      <FadeSlide>
+      <FadeSlide delay={0.06}>
         <div className="grid grid-cols-3 gap-3">
           <div>
             <label htmlFor={`w-${set.id}`} className="text-[9px] font-bold uppercase tracking-[0.12em] text-white/55">
@@ -925,7 +973,6 @@ function SetEditor({
               type="text"
               inputMode="decimal"
               autoComplete="off"
-              autoFocus
               value={weight}
               onChange={(e) => setWeight(e.target.value)}
               onFocus={(e) => e.target.select()}
@@ -983,78 +1030,84 @@ function SetEditor({
         ) : null}
       </FadeSlide>
 
-      {/* Context strip: last session, recovery, e1RM trend + sparkline */}
-      {lastSets.length > 0 || recovery || recent.length >= 2 ? (
-        <FadeSlide delay={0.05}>
-          <div className="mt-3.5 border-t border-white/10 pt-3">
-            <div className="grid grid-cols-3 gap-3">
-              <div>
-                <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-white/45">{t("Last")}</p>
-                {lastSets.length ? (
-                  <>
-                    <p className="mono-num mt-0.5 text-[12px] font-bold tabular-nums text-white">{lastSummary(lastSets)}</p>
-                    <p className="mt-0.5 text-[9px] text-white/45">
-                      {lastDate != null ? relativeDay(lastDate, i18n.language) : ""}
-                      {delta != null ? (
-                        <span className={`ml-1.5 font-bold ${delta > 0 ? "text-ok" : "text-fade"}`}>
-                          {delta > 0 ? "+" : ""}
-                          {delta} {unit}
-                        </span>
-                      ) : null}
-                    </p>
-                  </>
-                ) : (
-                  <p className="mt-0.5 text-[12px] text-white/35">—</p>
-                )}
-              </div>
-              <div>
-                <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-white/45">{t("Recovery")}</p>
-                {recovery ? (
-                  <>
-                    <p className={`mt-0.5 text-[12px] font-bold tabular-nums ${recoveryColor(recovery.pct)}`}>
-                      {recovery.code} {recovery.pct}%
-                    </p>
-                    <span className="mt-1 block h-[3px] w-12 overflow-hidden bg-white/15">
-                      <span
-                        className={`block h-full ${recoveryBarClass(recovery.pct)}`}
-                        style={{ width: `${Math.max(0, Math.min(100, recovery.pct))}%` }}
-                      />
+      {/* Context strip: last session, recovery, e1RM trend + sparkline.
+          Always rendered — placeholders make the feature discoverable on
+          fresh exercises instead of silently disappearing. */}
+      <div className="mt-3.5 border-t border-white/10 pt-3">
+        <div className="grid grid-cols-3 gap-3">
+          <FadeSlide delay={0.16}>
+            <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-white/45">{t("Last")}</p>
+            {lastSets.length ? (
+              <>
+                <p className="mono-num mt-0.5 text-[12px] font-bold tabular-nums text-white">{lastSummary(lastSets)}</p>
+                <p className="mt-0.5 text-[9px] text-white/45">
+                  {lastDate != null ? relativeDay(lastDate, i18n.language) : ""}
+                  {delta != null ? (
+                    <span className={`ml-1.5 font-bold ${delta > 0 ? "text-ok" : "text-fade"}`}>
+                      {delta > 0 ? "+" : ""}
+                      {delta} {unit}
                     </span>
-                  </>
-                ) : (
-                  <p className="mt-0.5 text-[12px] text-white/35">—</p>
-                )}
-              </div>
-              <div>
-                <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-white/45">{t("Trend")}</p>
-                {velPerMonth != null ? (
-                  <p
-                    className={`mt-0.5 text-[12px] font-bold tabular-nums ${
-                      velPerMonth > 0 ? "text-ok" : velPerMonth < 0 ? "text-fade" : "text-white/70"
-                    }`}
-                  >
-                    {velPerMonth > 0 ? "+" : ""}
-                    {velPerMonth}/{t("mo")}
-                  </p>
-                ) : (
-                  <p className="mt-0.5 text-[12px] text-white/35">—</p>
-                )}
-              </div>
-            </div>
+                  ) : null}
+                </p>
+              </>
+            ) : (
+              <p className="mt-0.5 text-[12px] text-white/35">—</p>
+            )}
+          </FadeSlide>
+          <FadeSlide delay={0.22}>
+            <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-white/45">{t("Recovery")}</p>
+            {recovery ? (
+              <>
+                <p className={`mt-0.5 text-[12px] font-bold tabular-nums ${recoveryColor(recovery.pct)}`}>
+                  {recovery.code} {recovery.pct}%
+                </p>
+                <span className="mt-1 block h-[3px] w-12 overflow-hidden bg-white/15">
+                  <motion.span
+                    className={`block h-full ${recoveryBarClass(recovery.pct)}`}
+                    initial={{ width: 0 }}
+                    animate={{ width: `${Math.max(0, Math.min(100, recovery.pct))}%` }}
+                    transition={{ duration: 0.5, ease: "easeOut", delay: 0.3 }}
+                  />
+                </span>
+              </>
+            ) : (
+              <p className="mt-0.5 text-[12px] text-white/35">—</p>
+            )}
+          </FadeSlide>
+          <FadeSlide delay={0.28}>
+            <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-white/45">{t("Trend")}</p>
+            {velPerMonth != null ? (
+              <p
+                className={`mt-0.5 text-[12px] font-bold tabular-nums ${
+                  velPerMonth > 0 ? "text-ok" : velPerMonth < 0 ? "text-fade" : "text-white/70"
+                }`}
+              >
+                {velPerMonth > 0 ? "+" : ""}
+                {velPerMonth}/{t("mo")}
+              </p>
+            ) : (
+              <p className="mt-0.5 text-[12px] text-white/35">—</p>
+            )}
+          </FadeSlide>
+        </div>
+        {seriesKnown ? (
+          <FadeSlide className="mt-2.5">
             {recent.length >= 2 ? (
-              <div className="mt-2.5">
-                <Sparkline
-                  points={recent}
-                  height={44}
-                  areaClass="fill-white/[0.06]"
-                  strokeClass="stroke-accent"
-                  dotClass="fill-white/70"
-                />
-              </div>
-            ) : null}
-          </div>
-        </FadeSlide>
-      ) : null}
+              <Sparkline
+                points={recent}
+                height={44}
+                areaClass="fill-white/[0.06]"
+                strokeClass="stroke-accent"
+                dotClass="fill-white/70"
+              />
+            ) : (
+              <p className="border-t border-dashed border-white/15 pt-1.5 text-[9px] font-semibold uppercase tracking-[0.08em] text-white/30">
+                {t("No history yet")}
+              </p>
+            )}
+          </FadeSlide>
+        ) : null}
+      </div>
 
       {/* Per-side plate breakdown — barbell lifts only */}
       {grouped.length > 0 && (
@@ -1067,32 +1120,36 @@ function SetEditor({
               {grouped.map((g) => `${g.count}×${g.plate}`).join(" · ")}
             </p>
           </div>
-          <div className="flex items-center gap-[3px]">
+          <div className="flex items-end gap-[3px]">
             {breakdown.map((p, i) => {
               const { w, h } = plateBlock(p, maxPlate);
               return (
-                <span
+                <motion.span
                   key={i}
-                  className="grid shrink-0 place-items-center bg-accent font-display text-[10px] font-extrabold tabular-nums text-ink [text-orientation:mixed] [writing-mode:vertical-rl]"
+                  className="grid shrink-0 origin-bottom place-items-center bg-accent font-display text-[10px] font-extrabold tabular-nums text-ink [text-orientation:mixed] [writing-mode:vertical-rl]"
                   style={{ width: `${w}px`, height: `${h}px` }}
+                  initial={{ opacity: 0, scaleY: 0.4 }}
+                  animate={{ opacity: 1, scaleY: 1 }}
+                  transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1], delay: i * 0.04 }}
                 >
                   {p}
-                </span>
+                </motion.span>
               );
             })}
           </div>
         </div>
       )}
 
-      <button
+      <motion.button
         type="button"
         disabled={!valid}
         onClick={() => valid && onCommit({ weight: weightNum, reps: repsNum, rir })}
+        whileTap={{ scale: 0.97 }}
         className="mt-3.5 w-full bg-accent py-3.5 font-display text-[13px] font-extrabold uppercase tracking-[0.14em] text-white disabled:opacity-40"
       >
         {set.isCompleted ? t("Save") : t("Log")}
         {valid ? ` ${weightNum} × ${repsNum}` : ""}
-      </button>
+      </motion.button>
 
       <RIRPickerSheet open={rirOpen} value={rir} onChange={setRir} onClose={() => setRirOpen(false)} />
     </div>

@@ -12,7 +12,7 @@ import { useLocation } from "react-router-dom";
 export const EASE_OUT: Transition = { duration: 0.2, ease: [0.16, 1, 0.3, 1] };
 
 /** Height expand/collapse (inline editors, sheets). */
-export const EXPAND: Transition = { duration: 0.26, ease: [0.16, 1, 0.3, 1] };
+export const EXPAND: Transition = { duration: 0.32, ease: [0.16, 1, 0.3, 1] };
 
 /** Fast exit fade so closing never feels laggy. */
 export const FADE_FAST: Transition = { duration: 0.1, ease: "easeIn" };
