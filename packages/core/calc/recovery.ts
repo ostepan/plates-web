@@ -85,6 +85,12 @@ export interface FatigueImpulse {
   sets: number;
   /** Set-weighted mean RPE of those sets; defaults to 7 (≤7 ⇒ no extra fatigue). */
   rpe?: number;
+  /**
+   * Recovery-time multiplier for this individual session (lighter deload work
+   * recovers faster). Defaults to the calc-wide `deloadMultiplier` so a session
+   * only gets the discount when it was actually trained during a deload.
+   */
+  deloadMultiplier?: number;
 }
 
 export interface RecoveryResult {
@@ -159,18 +165,19 @@ export const Recovery = {
 
     const base =
       opts.baseRecoverySeconds ?? customRecoveryTimes?.[muscleGroup] ?? BASE_RECOVERY[muscleGroup] ?? 48 * HOUR;
-    // Condition multipliers stretch/shrink the decay time-constant.
+    // Condition multipliers stretch/shrink the decay time-constant. Deload is
+    // applied per-impulse below (only sessions trained during a deload recover
+    // faster), so it's deliberately not folded into this shared condition.
     const condition =
       (factors ? factorsMultiplier(overallRecoveryScore(factors), factorsAgeHours) : 1) *
-      (userAge != null ? ageMultiplier(userAge) : 1) *
-      deloadMultiplier;
+      (userAge != null ? ageMultiplier(userAge) : 1);
 
     // Residual fatigue per impulse at `now`, plus each impulse's time constant
-    // (intensity stretches the individual impulse; conditions stretch all).
+    // (intensity + deload stretch the individual impulse; conditions stretch all).
     const terms = impulses
       .filter((i) => i.trainedAt <= now && i.sets > 0)
       .map((i) => {
-        const T = base * intensityMultiplier(i.rpe ?? 7) * condition; // seconds
+        const T = base * intensityMultiplier(i.rpe ?? 7) * (i.deloadMultiplier ?? deloadMultiplier) * condition; // seconds
         const dose = Math.min(MAX_DOSE, i.sets / DOSE_REF);
         const elapsed = (now - i.trainedAt) / 1000;
         return { dose, T, residual: dose * Math.exp((-LAMBDA * elapsed) / T) };
