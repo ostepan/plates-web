@@ -193,6 +193,20 @@ export async function muscleRecovery(): Promise<MuscleRecovery[]> {
   return rows;
 }
 
+export interface FullRecovery {
+  rows: MuscleRecovery[];
+  details: DetailedMuscleRecovery[];
+}
+
+/**
+ * Group and detail-head recovery in one pass. Use this instead of calling
+ * `muscleRecovery` and `detailedMuscleRecovery` separately when a screen needs
+ * both — it halves the database reads and fatigue computation.
+ */
+export async function allMuscleRecovery(): Promise<FullRecovery> {
+  return computeRecovery();
+}
+
 export interface DetailedMuscleRecovery extends MuscleRecovery {
   /** The specific head; `muscleGroup` carries its parent group. */
   detail: DetailedMuscle;
@@ -221,9 +235,11 @@ async function computeRecovery(): Promise<{ rows: MuscleRecovery[]; details: Det
 
   const factors = await latestFactors();
   const profile = (await db.userProfile.toArray())[0];
-  const deload =
+  // Deload speeds up recovery for sessions *trained during* the window only —
+  // a hard session logged before the deload started wasn't any lighter.
+  const deloadFor = (trainedAt: number) =>
     settings.deloadStartDate && settings.deloadEndDate &&
-    now >= settings.deloadStartDate && now <= settings.deloadEndDate
+    trainedAt >= settings.deloadStartDate && trainedAt <= settings.deloadEndDate
       ? settings.deloadMultiplier
       : 1;
   // "Mark as Ready" wipes fatigue logged before the override; training again re-fatigues.
@@ -233,7 +249,10 @@ async function computeRecovery(): Promise<{ rows: MuscleRecovery[]; details: Det
 
   const compute = (group: MuscleGroup, all: FatigueImpulse[], baseRecoverySeconds?: number): MuscleRecovery => {
     const cutoff = overrideAt.get(group);
-    const active = cutoff ? all.filter((i) => i.trainedAt > cutoff) : all;
+    const active = (cutoff ? all.filter((i) => i.trainedAt > cutoff) : all).map((i) => ({
+      ...i,
+      deloadMultiplier: deloadFor(i.trainedAt),
+    }));
     const r = Recovery.calculateRecovery({
       muscleGroup: group,
       impulses: active,
@@ -242,7 +261,6 @@ async function computeRecovery(): Promise<{ rows: MuscleRecovery[]; details: Det
       userAge: profile?.age ?? null,
       customRecoveryTimes: settings.customRecoveryTimes,
       baseRecoverySeconds,
-      deloadMultiplier: deload,
       thresholds,
       now,
     });

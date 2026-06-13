@@ -111,6 +111,32 @@ describe("Recovery (exponential fatigue model)", () => {
     expect(deload.recoveryPercentage).toBeGreaterThan(base.recoveryPercentage);
   });
 
+  it("a per-impulse deload only speeds up the session it's tagged on", () => {
+    const base = Recovery.calculateRecovery({ muscleGroup: "chest", impulses: [baseline(24)], now: NOW });
+    // Same session, but flagged as trained during a deload ⇒ recovers faster.
+    const tagged = Recovery.calculateRecovery({
+      muscleGroup: "chest",
+      impulses: [{ ...baseline(24), deloadMultiplier: 0.7 }],
+      now: NOW,
+    });
+    expect(tagged.recoveryPercentage).toBeGreaterThan(base.recoveryPercentage);
+
+    // A pre-deload hard session (no tag) is untouched while a later deload
+    // session gets the discount — the two are scoped independently.
+    const mixed = Recovery.calculateRecovery({
+      muscleGroup: "chest",
+      impulses: [baseline(48), { ...baseline(24), deloadMultiplier: 0.7 }],
+      deloadMultiplier: 1, // calc-wide default: only the tagged impulse opts in
+      now: NOW,
+    });
+    const allTagged = Recovery.calculateRecovery({
+      muscleGroup: "chest",
+      impulses: [{ ...baseline(48), deloadMultiplier: 0.7 }, { ...baseline(24), deloadMultiplier: 0.7 }],
+      now: NOW,
+    });
+    expect(mixed.recoveryPercentage).toBeLessThan(allTagged.recoveryPercentage);
+  });
+
   it("no impulses ⇒ fully recovered", () => {
     const r = Recovery.calculateRecovery({ muscleGroup: "legs", impulses: [], now: NOW });
     expect(r.recoveryPercentage).toBe(100);
