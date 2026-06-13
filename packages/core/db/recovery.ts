@@ -14,6 +14,37 @@ const dayStart = (ts: number) => Math.floor(ts / DAY) * DAY;
 /** Sessions older than this can't carry meaningful residual fatigue. */
 const IMPULSE_WINDOW_DAYS = 10;
 
+/**
+ * Trailing window for per-exercise load baselines — wider than the impulse
+ * window so the "heavy vs light" reference stays stable even for a muscle
+ * trained only once a week.
+ */
+const REF_WINDOW_DAYS = 56;
+
+/** Bounds on a single working set's effective-set weight, by load vs the exercise's norm. */
+const LOAD_WEIGHT_MIN = 0.5;
+const LOAD_WEIGHT_MAX = 2;
+
+/** Median of a numeric list (0 for empty). */
+export function medianLoad(xs: number[]): number {
+  if (!xs.length) return 0;
+  const s = [...xs].sort((a, b) => a - b);
+  const m = s.length >> 1;
+  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+}
+
+/**
+ * Effective-set weight for one working set: its volume-load (weight × reps)
+ * relative to the exercise's recent median, clamped to [LOAD_WEIGHT_MIN,
+ * LOAD_WEIGHT_MAX] so a single set can't swing fatigue wildly. Returns 1 (a
+ * plain set, the old set-count behavior) when load or baseline is unavailable
+ * — e.g. bodyweight or unlogged work, or an exercise with no load history.
+ */
+export function setLoadWeight(load: number, refLoad: number | undefined): number {
+  if (!(load > 0) || !refLoad || refLoad <= 0) return 1;
+  return Math.min(LOAD_WEIGHT_MAX, Math.max(LOAD_WEIGHT_MIN, load / refLoad));
+}
+
 export interface MuscleRecovery extends RecoveryResult {
   lastTrainedAt: number;
   daysSinceTrained: number;
@@ -119,15 +150,19 @@ interface ImpulseMaps {
 
 /**
  * Per-muscle fatigue impulses from finished sessions in the trailing window,
- * at both granularities. Working-set counts credit the exercise's primary
- * muscle group in full and each secondary group at `secondaryImpact`; within
- * each credited group the sets fan out to its detail heads per the exercise's
- * `detailCredits` split (dominant head = full credit). RPE is the set-weighted
- * mean of the session's logged RPE/RIR for that muscle (default 7 when nothing
- * is logged).
+ * at both granularities. Each working set credits the exercise's primary muscle
+ * group and each secondary group at `secondaryImpact`, weighted by the set's
+ * volume-load relative to that exercise's recent norm (`setLoadWeight`) so a
+ * heavier session deposits more fatigue than a lighter one; within each credited
+ * group the sets fan out to its detail heads per the exercise's `detailCredits`
+ * split (dominant head = full credit). RPE is the load-weighted mean of the
+ * session's logged RPE/RIR for that muscle (default 7 when nothing is logged).
  */
 async function fatigueImpulses(secondaryImpact: number, since: number): Promise<ImpulseMaps> {
-  const sessions = (await db.sessions.where("date").aboveOrEqual(since).toArray()).filter(
+  // Load a window wider than the impulse window so per-exercise load baselines stay stable;
+  // only sessions in [since, now] become impulses — the older ones just calibrate the baseline.
+  const refSince = Math.min(since, Date.now() - REF_WINDOW_DAYS * DAY);
+  const sessions = (await db.sessions.where("date").aboveOrEqual(refSince).toArray()).filter(
     (s) => s.durationSeconds > 0,
   );
   if (!sessions.length) return { byGroup: new Map(), byDetail: new Map() };
@@ -137,6 +172,22 @@ async function fatigueImpulses(secondaryImpact: number, since: number): Promise<
   const sets = await db.workoutSets.where("sessionExerciseId").anyOf(sxs.map((s) => s.id)).toArray();
   const sxById = new Map(sxs.map((sx) => [sx.id, sx]));
   const dateBySession = new Map(sessions.map((s) => [s.id, s.date]));
+
+  // Per-exercise reference volume-load: the median completed-working-set weight×reps across the
+  // reference window. A set heavier than this norm deposits proportionally more fatigue and a
+  // lighter (deload/back-off) set less, self-calibrated per exercise so it needs no absolute units.
+  const loadsByExercise = new Map<ID, number[]>();
+  for (const set of sets) {
+    if (!set.isCompleted || set.kind !== "working") continue;
+    const exId = sxById.get(set.sessionExerciseId)?.exerciseId;
+    const load = set.weight * set.reps;
+    if (!exId || load <= 0) continue;
+    const arr = loadsByExercise.get(exId);
+    if (arr) arr.push(load);
+    else loadsByExercise.set(exId, [load]);
+  }
+  const refLoad = new Map<ID, number>();
+  for (const [exId, xs] of loadsByExercise) refLoad.set(exId, medianLoad(xs));
 
   // (sessionId, muscle) → { sets, rpeWeight, rpeSets }
   interface Acc { date: number; sets: number; rpeSum: number; rpeSets: number }
@@ -148,8 +199,10 @@ async function fatigueImpulses(secondaryImpact: number, since: number): Promise<
     const sx = sxById.get(set.sessionExerciseId);
     const ex = sx?.exerciseId ? exById.get(sx.exerciseId) : undefined;
     const date = sx ? dateBySession.get(sx.sessionId) : undefined;
-    if (!sx || !ex || date === undefined) continue;
+    if (!sx || !ex || date === undefined || date < since) continue; // impulse window only
     const rpe = set.rpe ?? (set.rir != null ? 10 - set.rir : undefined);
+    // This set's fatigue weight: its volume-load vs the exercise's norm (1.0 = a typical set).
+    const loadW = setLoadWeight(set.weight * set.reps, refLoad.get(ex.id));
 
     const tally = <M extends string>(acc: Map<string, Acc & { muscle: M }>, muscle: M, weight: number) => {
       const key = `${sx.sessionId}|${muscle}`;
@@ -166,8 +219,8 @@ async function fatigueImpulses(secondaryImpact: number, since: number): Promise<
       const splits = Object.entries(detailCredits(`${ex.nameKey} ${ex.nameEN}`, group)) as [DetailedMuscle, number][];
       for (const [d, w] of splits) tally(detailAcc, d, weight * w);
     };
-    credit(ex.muscleGroup, 1);
-    if (secondaryImpact > 0) for (const m of ex.secondary) credit(m, secondaryImpact);
+    credit(ex.muscleGroup, loadW);
+    if (secondaryImpact > 0) for (const m of ex.secondary) credit(m, secondaryImpact * loadW);
   }
 
   const collect = <M extends string>(acc: Map<string, Acc & { muscle: M }>): Map<M, FatigueImpulse[]> => {

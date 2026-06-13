@@ -6,7 +6,7 @@ import {
   addExerciseToRoutine, createRoutine, finishSession, getOrCreateRecoverySettings, markMuscleReady,
   saveRecoveryCheckIn, startSessionFromRoutine, toggleSetComplete, updateRecoverySettings, updateSet,
 } from "./mutations";
-import { detailedMuscleRecovery, muscleRecovery, todayFactors } from "./recovery";
+import { detailedMuscleRecovery, medianLoad, muscleRecovery, setLoadWeight, todayFactors } from "./recovery";
 import type { ID } from "../models/types";
 
 let routineId: ID;
@@ -123,5 +123,65 @@ describe("recovery aggregation (M4)", () => {
     await markMuscleReady("shoulders");
     const front = (await detailedMuscleRecovery()).find((d) => d.detail === "frontDelts")!;
     expect(front.recoveryPercentage).toBe(100);
+  });
+});
+
+describe("load weighting", () => {
+  it("medianLoad handles odd, even, and empty lists", () => {
+    expect(medianLoad([500])).toBe(500);
+    expect(medianLoad([300, 100, 200])).toBe(200);
+    expect(medianLoad([100, 200, 300, 400])).toBe(250);
+    expect(medianLoad([])).toBe(0);
+  });
+
+  it("setLoadWeight scales by load vs the exercise norm, clamped, with a unit fallback", () => {
+    expect(setLoadWeight(500, 500)).toBe(1); // typical set
+    expect(setLoadWeight(750, 500)).toBe(1.5); // 50% heavier
+    expect(setLoadWeight(5000, 500)).toBe(2); // clamped high
+    expect(setLoadWeight(50, 500)).toBe(0.5); // clamped low
+    expect(setLoadWeight(0, 500)).toBe(1); // no load logged ⇒ plain set
+    expect(setLoadWeight(500, undefined)).toBe(1); // no baseline ⇒ plain set
+    expect(setLoadWeight(500, 0)).toBe(1); // degenerate baseline ⇒ plain set
+  });
+});
+
+describe("load-aware fatigue", () => {
+  let lowerRoutineId: ID;
+  const LEG = "exercise.leg_extension"; // legs, no secondary
+  const GLUTE = "exercise.cable_kickback"; // glutes, no secondary — same 72h base, no overlap
+
+  /** Log a lower day (both exercises at 5 reps), back-dated `hoursAgo`. */
+  async function logLowerDay(legWeight: number, gluteWeight: number, hoursAgo: number): Promise<void> {
+    const sid = await startSessionFromRoutine(lowerRoutineId);
+    for (const sx of await db.sessionExercises.where("sessionId").equals(sid).toArray()) {
+      const ex = sx.exerciseId ? await db.exercises.get(sx.exerciseId) : undefined;
+      const w = ex?.nameKey === LEG ? legWeight : gluteWeight;
+      for (const s of await db.workoutSets.where("sessionExerciseId").equals(sx.id).toArray()) {
+        await updateSet(s.id, { weight: w, reps: 5 });
+        await toggleSetComplete(s.id);
+      }
+    }
+    await finishSession(sid);
+    await db.sessions.update(sid, { date: Date.now() - hoursAgo * 3_600_000 });
+  }
+
+  beforeAll(async () => {
+    await seedIfNeeded();
+    const all = await db.exercises.toArray();
+    lowerRoutineId = await createRoutine("Lower");
+    await addExerciseToRoutine(lowerRoutineId, all.find((e) => e.nameKey === LEG)!.id);
+    await addExerciseToRoutine(lowerRoutineId, all.find((e) => e.nameKey === GLUTE)!.id);
+    // Establish a per-exercise load baseline (both 100×5 ⇒ ref 500), old enough to have decayed.
+    for (const h of [220, 244, 268]) await logLowerDay(100, 100, h);
+  });
+
+  it("a heavier-than-normal session deposits more fatigue than a normal one", async () => {
+    // Same recency, set count, and base recovery (legs & glutes are both 72h) with no shared
+    // secondary — the only difference is load: legs trained 50% over its norm, glutes at norm.
+    await logLowerDay(150, 100, 36);
+    const rows = await muscleRecovery();
+    const legs = rows.find((r) => r.muscleGroup === "legs")!;
+    const glutes = rows.find((r) => r.muscleGroup === "glutes")!;
+    expect(legs.recoveryPercentage).toBeLessThan(glutes.recoveryPercentage);
   });
 });
