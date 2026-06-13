@@ -7,7 +7,7 @@ import { Brain, ChevronLeft, Flame, Moon, Settings, Utensils, Zap } from "lucide
 import type { LucideIcon } from "lucide-react";
 import { markMuscleReady, saveRecoveryCheckIn } from "@core/db/mutations";
 import {
-  detailedMuscleRecovery, factorTrends, getRecoverySettings, muscleRecovery,
+  factorTrends, fullMuscleRecovery, getRecoverySettings, muscleRecovery,
   muscleRecoveryDailyHistory, recoveryScoreHistory, todayFactors,
   type DetailedMuscleRecovery,
 } from "@core/db/recovery";
@@ -96,11 +96,10 @@ export function RecoveryComposer({ initialSeg = "status", dense = false }: { ini
 function RecoveryStatus() {
   const { t } = useTranslation();
   const data = useLiveQuery(
-    async () => ({
-      rows: await muscleRecovery(),
-      details: await detailedMuscleRecovery(),
-      settings: await getRecoverySettings(),
-    }),
+    async () => {
+      const { rows, details } = await fullMuscleRecovery();
+      return { rows, details, settings: await getRecoverySettings() };
+    },
     [],
     undefined,
   );

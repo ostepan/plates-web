@@ -12,6 +12,7 @@ import { IronTopBar, IronToolbarButton } from "@ui/components/IronTopBar";
 import { IronEmptyState } from "@ui/components/IronEmptyState";
 import { IronMenu } from "@ui/components/IronMenu";
 import { relativeDay } from "@app/lib/format";
+import { ironConfirm } from "@app/stores/confirm";
 
 // Fatigue-band dot color for the readiness banner.
 const DOT: Record<string, string> = { avoid: "bg-bad", notRecommended: "bg-fade", caution: "bg-warn" };
@@ -68,7 +69,15 @@ export function WorkoutTab() {
   }
 
   async function removeRoutine(id: string, name: string) {
-    if (!window.confirm(`${t("Delete routine")} "${name}"? ${t("Past sessions are kept.")}`)) return;
+    if (
+      !(await ironConfirm({
+        title: `${t("Delete routine")} "${name}"?`,
+        message: t("Past sessions are kept."),
+        confirmLabel: t("Delete"),
+        destructive: true,
+      }))
+    )
+      return;
     await deleteRoutine(id);
   }
 

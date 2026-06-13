@@ -9,6 +9,7 @@ import { LANGS, setLanguage, type Lang } from "@core/i18n/i18n";
 import { IronTopBar } from "@ui/components/IronTopBar";
 import { setWeightUnit, weightUnit } from "@app/lib/format";
 import { useInstallPrompt } from "@app/hooks/useInstallPrompt";
+import { ironConfirm } from "@app/stores/confirm";
 import { ONBOARDED_KEY } from "./Onboarding";
 
 /** 3_420_000 → "3.42M", 74_200 → "74.2k". */
@@ -39,8 +40,8 @@ export function ProfileTab() {
     undefined,
   );
 
-  function resetOnboarding() {
-    if (!window.confirm(t("Show onboarding again on next launch?"))) return;
+  async function resetOnboarding() {
+    if (!(await ironConfirm({ title: t("Show onboarding again on next launch?") }))) return;
     localStorage.removeItem(ONBOARDED_KEY);
     window.location.reload();
   }

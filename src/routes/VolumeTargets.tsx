@@ -9,6 +9,7 @@ import { MUSCLE_I18N_KEY, type MuscleGroup } from "@core/models/enums";
 import { IronTopBar, IronToolbarButton } from "@ui/components/IronTopBar";
 import { Stepper } from "@ui/components/Stepper";
 import { useGoBack } from "@app/hooks/useGoBack";
+import { ironConfirm } from "@app/stores/confirm";
 
 export function VolumeTargets() {
   const { t } = useTranslation();
@@ -36,7 +37,7 @@ export function VolumeTargets() {
       : "custom";
 
   async function pickPreset(preset: [MuscleGroup, number, number, number][], name: string) {
-    if (!window.confirm(t("Replace all targets with the {{name}} preset?", { name }))) return;
+    if (!(await ironConfirm({ title: t("Replace all targets with the {{name}} preset?", { name }) }))) return;
     await applyVolumePreset(preset);
   }
 

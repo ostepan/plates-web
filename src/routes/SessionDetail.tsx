@@ -11,6 +11,7 @@ import type { SetKind } from "@core/models/enums";
 import { IronTopBar, IronToolbarButton } from "@ui/components/IronTopBar";
 import { formatDuration, localizedExerciseName, weightUnit } from "@app/lib/format";
 import { useGoBack } from "@app/hooks/useGoBack";
+import { ironConfirm } from "@app/stores/confirm";
 
 const KIND_ABBR: Record<SetKind, string> = {
   working: "", warmup: "W", dropset: "D", amrap: "A", restPause: "RP", myoReps: "M",
@@ -65,7 +66,15 @@ export function SessionDetail() {
   const setCount = blocks.reduce((n, b) => n + b.sets.filter((s) => s.kind === "working").length, 0);
 
   async function onDelete() {
-    if (!window.confirm(t("Delete this session? This can't be undone."))) return;
+    if (
+      !(await ironConfirm({
+        title: t("Delete this session?"),
+        message: t("This can't be undone."),
+        confirmLabel: t("Delete"),
+        destructive: true,
+      }))
+    )
+      return;
     await discardSession(sessionId);
     navigate("/history", { replace: true });
   }

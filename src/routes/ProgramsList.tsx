@@ -10,6 +10,7 @@ import type { Program } from "@core/models/types";
 import { IronTopBar, IronToolbarButton } from "@ui/components/IronTopBar";
 import { IronMenu, type IronMenuItem } from "@ui/components/IronMenu";
 import { useGoBack } from "@app/hooks/useGoBack";
+import { ironConfirm } from "@app/stores/confirm";
 
 interface ProgramRow {
   p: Program;
@@ -49,7 +50,15 @@ export function ProgramsList() {
     if (newId) navigate(`/programs/${newId}`);
   }
   async function remove(p: Program) {
-    if (!window.confirm(`${t("Delete program")} "${p.name}"? ${t("Past sessions are kept.")}`)) return;
+    if (
+      !(await ironConfirm({
+        title: `${t("Delete program")} "${p.name}"?`,
+        message: t("Past sessions are kept."),
+        confirmLabel: t("Delete"),
+        destructive: true,
+      }))
+    )
+      return;
     await deleteProgram(p.id);
   }
 

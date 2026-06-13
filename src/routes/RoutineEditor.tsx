@@ -13,6 +13,7 @@ import { IronTopBar, IronToolbarButton } from "@ui/components/IronTopBar";
 import { Stepper } from "@ui/components/Stepper";
 import { ExercisePicker } from "@app/components/ExercisePicker";
 import { localizedExerciseName } from "@app/lib/format";
+import { ironConfirm } from "@app/stores/confirm";
 
 export function RoutineEditor() {
   const { id = "" } = useParams();
@@ -129,7 +130,15 @@ export function RoutineEditor() {
         <button
           type="button"
           onClick={async () => {
-            if (!window.confirm(`${t("Delete routine")} "${routine?.name ?? ""}"? ${t("Past sessions are kept.")}`)) return;
+            if (
+              !(await ironConfirm({
+                title: `${t("Delete routine")} "${routine?.name ?? ""}"?`,
+                message: t("Past sessions are kept."),
+                confirmLabel: t("Delete"),
+                destructive: true,
+              }))
+            )
+              return;
             await deleteRoutine(id);
             navigate("/workout", { replace: true });
           }}

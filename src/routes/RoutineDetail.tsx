@@ -10,6 +10,7 @@ import { supersetBadge } from "@core/superset";
 import { IronTopBar, IronToolbarButton } from "@ui/components/IronTopBar";
 import { localizedExerciseName, relativeDay } from "@app/lib/format";
 import { useGoBack } from "@app/hooks/useGoBack";
+import { ironConfirm } from "@app/stores/confirm";
 
 export function RoutineDetail() {
   const { id = "" } = useParams();
@@ -58,12 +59,14 @@ export function RoutineDetail() {
   async function start() {
     if (
       verdict?.notRecommended &&
-      !window.confirm(
-        t("This routine targets fatigued muscles ({{ready}}/{{total}} ready). Start anyway?", {
+      !(await ironConfirm({
+        title: t("Train fatigued muscles?"),
+        message: t("This routine targets fatigued muscles ({{ready}}/{{total}} ready). Start anyway?", {
           ready: verdict.readyCount,
           total: verdict.total,
         }),
-      )
+        confirmLabel: t("Start anyway"),
+      }))
     )
       return;
     const sessionId = await startSessionFromRoutine(id);

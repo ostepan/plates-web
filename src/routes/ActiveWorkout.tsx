@@ -3,7 +3,7 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { useNavigate, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { AnimatePresence, motion } from "framer-motion";
-import { ArrowDown, ArrowUp, Check, ChevronDown, Lightbulb, Plus, Timer, X } from "lucide-react";
+import { ArrowDown, ArrowUp, Check, ChevronDown, Lightbulb, Minus, Plus, Timer, X } from "lucide-react";
 import { db } from "@core/db/db";
 import {
   addExerciseToSession, addSet, deleteSet, discardSession, finishSession, toggleSetComplete, updateSet,
@@ -25,6 +25,7 @@ import { MUSCLE_I18N_KEY } from "@core/models/enums";
 import { supersetBadge } from "@core/superset";
 import { formatDuration, localizedExerciseName, relativeDay, weightUnit } from "@app/lib/format";
 import { useRestTimerStore } from "@app/stores/restTimer";
+import { ironConfirm } from "@app/stores/confirm";
 
 interface Block {
   sxId: ID;
@@ -65,12 +66,17 @@ export function ActiveWorkout() {
   // the set-editor animation). The countdown display lives in <RestBar/>.
   const restRunning = useRestTimerStore((s) => s.endsAt != null);
   const restStartStore = useRestTimerStore((s) => s.start);
+  const restStop = useRestTimerStore((s) => s.stop);
   const restStart = useCallback(
     (seconds: number) => restStartStore(seconds, sessionId),
     [restStartStore, sessionId],
   );
   const [picking, setPicking] = useState(false);
   const [editingSetId, setEditingSetId] = useState<ID | null>(null);
+  // Per-exercise rest overrides for this session — tweak rest mid-workout
+  // without touching the exercise's saved default. Keyed by sessionExercise id;
+  // survives the blocks live-query re-running on every set change.
+  const [restOverrides, setRestOverrides] = useState<Record<ID, number>>({});
   const [openCues, setOpenCues] = useState<Set<ID>>(() => new Set());
   const toggleCues = (sxId: ID) =>
     setOpenCues((prev) => {
@@ -177,11 +183,21 @@ export function ActiveWorkout() {
   const currentExercise = firstIncomplete === -1 ? blocks.length : firstIncomplete + 1;
 
   async function finish() {
+    restStop();
     await finishSession(sessionId);
     navigate(`/summary/${sessionId}`, { replace: true });
   }
   async function discard() {
-    if (!confirm(t("Discard workout") + "?")) return;
+    if (
+      !(await ironConfirm({
+        title: t("Discard workout") + "?",
+        message: t("Logged sets will be deleted. This can't be undone."),
+        confirmLabel: t("Discard"),
+        destructive: true,
+      }))
+    )
+      return;
+    restStop();
     await discardSession(sessionId);
     navigate("/workout", { replace: true });
   }
@@ -239,6 +255,7 @@ export function ActiveWorkout() {
               : null;
           const showCapWarning =
             setCap != null && workingDone >= setCap && b.sets.some((s) => !s.isCompleted);
+          const effectiveRest = restOverrides[b.sxId] ?? b.restSeconds;
           return (
             <section key={b.sxId}>
               {/* Exercise header bar — peach when current */}
@@ -360,16 +377,22 @@ export function ActiveWorkout() {
                     editing={s.id === editingSetId}
                     onEdit={() => setEditingSetId(s.id)}
                     onCloseEdit={() => setEditingSetId(null)}
-                    onComplete={(done) => done && restStart(b.restSeconds)}
+                    onComplete={(done) => done && restStart(effectiveRest)}
                   />
                 ))}
-                <button
-                  type="button"
-                  onClick={() => void addSet(b.sxId)}
-                  className="mt-2.5 w-full py-[9px] text-center font-display text-[11px] font-bold uppercase tracking-[0.09em] text-ink2 active:text-ink"
-                >
-                  {t("+ Add set")}
-                </button>
+                <div className="mt-2.5 flex items-center justify-between gap-3">
+                  <button
+                    type="button"
+                    onClick={() => void addSet(b.sxId)}
+                    className="py-[9px] text-left font-display text-[11px] font-bold uppercase tracking-[0.09em] text-ink2 active:text-ink"
+                  >
+                    {t("+ Add set")}
+                  </button>
+                  <RestControl
+                    seconds={effectiveRest}
+                    onChange={(s) => setRestOverrides((m) => ({ ...m, [b.sxId]: s }))}
+                  />
+                </div>
               </div>
             </section>
           );
@@ -525,6 +548,36 @@ function RestBar() {
   );
 }
 
+/** Per-exercise rest adjuster in the set footer — change rest mid-workout. */
+function RestControl({ seconds, onChange }: { seconds: number; onChange: (s: number) => void }) {
+  const { t } = useTranslation();
+  return (
+    <div className="flex items-center gap-1.5">
+      <Timer size={12} strokeWidth={2.25} className="text-ink3" />
+      <span className="text-[9px] font-bold uppercase tracking-[0.12em] text-ink3">{t("REST")}</span>
+      <button
+        type="button"
+        aria-label={t("Decrease rest")}
+        onClick={() => onChange(Math.max(0, seconds - 15))}
+        className="grid h-[22px] w-[22px] place-items-center border border-rule text-ink2 active:bg-chip"
+      >
+        <Minus size={12} strokeWidth={2.5} />
+      </button>
+      <span className="mono-num w-10 text-center text-[12px] font-bold tabular-nums text-ink">
+        {formatDuration(seconds)}
+      </span>
+      <button
+        type="button"
+        aria-label={t("Increase rest")}
+        onClick={() => onChange(seconds + 15)}
+        className="grid h-[22px] w-[22px] place-items-center border border-rule text-ink2 active:bg-chip"
+      >
+        <Plus size={12} strokeWidth={2.5} />
+      </button>
+    </div>
+  );
+}
+
 function GridStat({ label, value }: { label: string; value: string }) {
   return (
     <div className="px-[14px] py-2.5">
@@ -617,7 +670,6 @@ function SetRow({
 }) {
   const { t } = useTranslation();
   const unit = weightUnit();
-  const [menu, setMenu] = useState(false);
   // Briefly tint the row accent after logging, then settle.
   const [justLogged, setJustLogged] = useState(false);
   useEffect(() => {
@@ -687,45 +739,17 @@ function SetRow({
     );
   }
 
+  // Set-type + delete moved into the editor; the badge is now a plain
+  // indicator and a tap anywhere on the row opens the editor.
   const Badge = (
-    <button
-      type="button"
-      aria-label={t("Set type")}
-      onClick={(e) => {
-        e.stopPropagation();
-        setMenu((v) => !v);
-      }}
+    <span
       className={`flex h-[26px] w-[26px] items-center justify-center font-display text-[12px] font-extrabold ${
         badgeHot ? "bg-accentSoft text-accent" : "bg-chip text-ink2"
       }`}
     >
       {badgeLabel}
-    </button>
+    </span>
   );
-  const Menu = menu ? (
-    <>
-      <div className="fixed inset-0 z-10" onClick={(e) => { e.stopPropagation(); setMenu(false); }} />
-      <div className="absolute left-0 top-7 z-20 w-32 border border-ink bg-card" onClick={(e) => e.stopPropagation()}>
-        {SET_KINDS.map((k) => (
-          <button
-            key={k}
-            type="button"
-            onClick={() => { void updateSet(set.id, { kind: k }); setMenu(false); }}
-            className={`block w-full px-3 py-2 text-left text-[12px] ${k === set.kind ? "bg-chip font-bold text-ink" : "text-ink2"}`}
-          >
-            {KIND_ABBR[k] ? `${KIND_ABBR[k]} · ` : ""}{t(KIND_LABEL[k])}
-          </button>
-        ))}
-        <button
-          type="button"
-          onClick={() => { void deleteSet(set.id); setMenu(false); }}
-          className="block w-full border-t border-rule px-3 py-2 text-left text-[12px] text-bad"
-        >
-          {t("Delete set")}
-        </button>
-      </div>
-    </>
-  ) : null;
 
   // ---- COMPLETED: compact summary row (tap to revise, check to un-complete) ----
   if (set.isCompleted) {
@@ -746,7 +770,7 @@ function SetRow({
         transition={{ duration: 0.15 }}
         className={`flex cursor-pointer items-center border-b border-hairline py-[11px] ${justLogged ? "animate-logflash" : ""}`}
       >
-        <div className="relative w-[30px]">{Badge}{Menu}</div>
+        <div className="w-[30px]">{Badge}</div>
         <div className="flex flex-1 flex-wrap items-center gap-2">
           <span className="font-display text-[15px] font-bold tabular-nums text-ink">
             {set.weight}
@@ -794,7 +818,7 @@ function SetRow({
           : undefined
       }
     >
-      <div className="relative">{Badge}{Menu}</div>
+      <div>{Badge}</div>
       <span className={`font-display text-[16px] font-bold tabular-nums ${active ? "text-ink" : "text-ink3"}`}>
         {dispWeight || "—"}
         {dispWeight ? <span className="ml-0.5 text-[10px] font-semibold text-ink3">{unit}</span> : null}
@@ -962,6 +986,25 @@ function SetEditor({
         </button>
       </div>
 
+      {/* Set type — moved here from the row badge so it's editable in context. */}
+      <div className="mb-3.5 -mx-[22px] flex gap-1.5 overflow-x-auto px-[22px] pb-0.5 [-ms-overflow-style:none] [scrollbar-width:none]">
+        {SET_KINDS.map((k) => {
+          const on = set.kind === k;
+          return (
+            <button
+              key={k}
+              type="button"
+              onClick={() => void updateSet(set.id, { kind: k })}
+              className={`shrink-0 appearance-none border px-2.5 py-1.5 font-display text-[10px] font-bold uppercase tracking-[0.08em] ${
+                on ? "border-accent bg-accent text-white" : "border-white/15 text-white/55 active:border-white/40"
+              }`}
+            >
+              {t(KIND_LABEL[k])}
+            </button>
+          );
+        })}
+      </div>
+
       <FadeSlide delay={0.06}>
         <div className="grid grid-cols-3 gap-3">
           <div>
@@ -1001,12 +1044,12 @@ function SetEditor({
               aria-haspopup="dialog"
               aria-expanded={rirOpen}
               onClick={() => setRirOpen(true)}
-              className={`mt-1.5 flex h-11 w-full items-center justify-center gap-1.5 border bg-white/[0.08] font-display text-[22px] font-extrabold tabular-nums tracking-[-0.6px] ${
+              className={`relative mt-1.5 flex h-11 w-full appearance-none items-center justify-center rounded-none border bg-white/[0.08] font-display text-[22px] font-extrabold tabular-nums tracking-[-0.6px] ${
                 rir != null ? `${rirTint.ring} ${rirTint.text}` : "border-white/15 text-white/45"
               }`}
             >
               {rir != null ? (rir >= 4 ? "4+" : rir) : "—"}
-              <ChevronDown size={14} strokeWidth={2.5} className="text-white/45" />
+              <ChevronDown size={14} strokeWidth={2.5} className="absolute right-2 text-white/45" />
             </button>
           </div>
         </div>
@@ -1150,6 +1193,17 @@ function SetEditor({
         {set.isCompleted ? t("Save") : t("Log")}
         {valid ? ` ${weightNum} × ${repsNum}` : ""}
       </motion.button>
+
+      <button
+        type="button"
+        onClick={() => {
+          void deleteSet(set.id);
+          onCancel();
+        }}
+        className="mt-3 w-full py-2 text-center text-[10px] font-bold uppercase tracking-[0.12em] text-white/40 active:text-bad"
+      >
+        {t("Delete set")}
+      </button>
 
       <RIRPickerSheet open={rirOpen} value={rir} onChange={setRir} onClose={() => setRirOpen(false)} />
     </div>

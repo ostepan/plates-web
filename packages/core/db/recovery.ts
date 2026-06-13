@@ -1,7 +1,7 @@
 import { db } from "./db";
 import type { Exercise, ID, RecoveryFactors, RecoverySettings } from "../models/types";
 import type { MuscleGroup } from "../models/enums";
-import { DETAIL_PARENT, type DetailedMuscle } from "../models/muscles";
+import { DETAIL_PARENT, DETAILED_MUSCLES, type DetailedMuscle } from "../models/muscles";
 import {
   BASE_RECOVERY, RECOVERY_SETTINGS_DEFAULTS, Recovery, overallRecoveryScore,
   type FatigueImpulse, type RecoveryResult, type RecoveryThresholds, type RecoveryVerdict,
@@ -13,6 +13,15 @@ const dayStart = (ts: number) => Math.floor(ts / DAY) * DAY;
 
 /** Sessions older than this can't carry meaningful residual fatigue. */
 const IMPULSE_WINDOW_DAYS = 10;
+
+/**
+ * Muscle groups always shown in the recovery grid, even when untrained (they
+ * read as fully recovered). `cardio`/`fullBody` are excluded — they aren't
+ * discrete recoverable muscles — but still surface if a session trains them.
+ */
+const DISPLAY_GROUPS: MuscleGroup[] = [
+  "chest", "back", "shoulders", "biceps", "triceps", "forearms", "legs", "glutes", "calves", "abs",
+];
 
 export interface MuscleRecovery extends RecoveryResult {
   lastTrainedAt: number;
@@ -211,13 +220,27 @@ export async function detailedMuscleRecovery(): Promise<DetailedMuscleRecovery[]
   return details;
 }
 
-async function computeRecovery(): Promise<{ rows: MuscleRecovery[]; details: DetailedMuscleRecovery[] }> {
+/**
+ * Recovery for every standard muscle group + detail head, padding untrained
+ * ones in as fully recovered. Drives the recovery grid so muscles you haven't
+ * hit recently (legs, chest, traps, …) still appear instead of vanishing.
+ */
+export async function fullMuscleRecovery(): Promise<{
+  rows: MuscleRecovery[];
+  details: DetailedMuscleRecovery[];
+}> {
+  return computeRecovery({ includeUntrained: true });
+}
+
+async function computeRecovery(
+  opts: { includeUntrained?: boolean } = {},
+): Promise<{ rows: MuscleRecovery[]; details: DetailedMuscleRecovery[] }> {
   const now = Date.now();
   const settings = await getRecoverySettings();
   const thresholds = thresholdsOf(settings);
 
   const impulses = await fatigueImpulses(settings.secondaryMuscleImpact, now - IMPULSE_WINDOW_DAYS * DAY);
-  if (!impulses.byGroup.size) return { rows: [], details: [] };
+  if (!impulses.byGroup.size && !opts.includeUntrained) return { rows: [], details: [] };
 
   const factors = await latestFactors();
   const profile = (await db.userProfile.toArray())[0];
@@ -246,8 +269,9 @@ async function computeRecovery(): Promise<{ rows: MuscleRecovery[]; details: Det
       thresholds,
       now,
     });
-    const lastTrainedAt = Math.max(...all.map((i) => i.trainedAt));
-    const daysSinceTrained = Math.floor((now - lastTrainedAt) / DAY);
+    // Untrained muscles have no impulses ⇒ fully recovered, never trained.
+    const lastTrainedAt = all.length ? Math.max(...all.map((i) => i.trainedAt)) : 0;
+    const daysSinceTrained = all.length ? Math.floor((now - lastTrainedAt) / DAY) : Number.POSITIVE_INFINITY;
     return {
       ...r,
       lastTrainedAt,
@@ -256,12 +280,23 @@ async function computeRecovery(): Promise<{ rows: MuscleRecovery[]; details: Det
     };
   };
 
+  // Trained muscles always; when padding, add the standard display groups so
+  // legs/chest/traps/… appear at 100% even before they've been trained.
+  const groups = new Set<MuscleGroup>(impulses.byGroup.keys());
+  const detailKeys = new Set<DetailedMuscle>(impulses.byDetail.keys());
+  if (opts.includeUntrained) {
+    for (const g of DISPLAY_GROUPS) {
+      groups.add(g);
+      for (const d of DETAILED_MUSCLES[g]) detailKeys.add(d);
+    }
+  }
+
   const rows: MuscleRecovery[] = [];
-  for (const [mg, all] of impulses.byGroup) rows.push(compute(mg, all));
+  for (const mg of groups) rows.push(compute(mg, impulses.byGroup.get(mg) ?? []));
 
   const details: DetailedMuscleRecovery[] = [];
-  for (const [d, all] of impulses.byDetail) {
-    const r = compute(DETAIL_PARENT[d], all, detailBaseSeconds(d, settings.customRecoveryTimes));
+  for (const d of detailKeys) {
+    const r = compute(DETAIL_PARENT[d], impulses.byDetail.get(d) ?? [], detailBaseSeconds(d, settings.customRecoveryTimes));
     details.push({ ...r, detail: d });
   }
 

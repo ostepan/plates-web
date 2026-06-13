@@ -16,6 +16,7 @@ import { IronTopBar, IronToolbarButton } from "@ui/components/IronTopBar";
 import { Sparkline } from "@ui/components/Sparkline";
 import { formatDuration, localizedExerciseName, relativeDay, weightUnit } from "@app/lib/format";
 import { useGoBack } from "@app/hooks/useGoBack";
+import { ironConfirm } from "@app/stores/confirm";
 
 const DAY = 86_400_000;
 const PERIODS = [
@@ -104,7 +105,7 @@ export function ExerciseDetail() {
   }
 
   async function onDelete() {
-    if (!window.confirm(t("Delete this custom exercise?"))) return;
+    if (!(await ironConfirm({ title: t("Delete this custom exercise?"), confirmLabel: t("Delete"), destructive: true }))) return;
     await deleteExercise(id);
     navigate("/exercises", { replace: true });
   }

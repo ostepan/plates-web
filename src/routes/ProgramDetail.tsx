@@ -9,6 +9,7 @@ import type { ID } from "@core/models/types";
 import type { ProgressionRule } from "@core/models/enums";
 import { IronTopBar, IronToolbarButton } from "@ui/components/IronTopBar";
 import { useGoBack } from "@app/hooks/useGoBack";
+import { ironConfirm } from "@app/stores/confirm";
 
 const RULE_KEY: Record<ProgressionRule, string> = {
   linear: "LINEAR",
@@ -65,7 +66,15 @@ export function ProgramDetail() {
   }
 
   async function onDelete() {
-    if (!window.confirm(t("Delete this program? Past sessions are kept."))) return;
+    if (
+      !(await ironConfirm({
+        title: t("Delete this program?"),
+        message: t("Past sessions are kept."),
+        confirmLabel: t("Delete"),
+        destructive: true,
+      }))
+    )
+      return;
     await deleteProgram(id);
     navigate("/programs", { replace: true });
   }

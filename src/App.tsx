@@ -9,6 +9,7 @@ import { IronTabBar } from "@ui/components/IronTabBar";
 import { PageTransition } from "@ui/components/motion";
 import { seedIfNeeded } from "@core/db/seed";
 import { FloatingRestTimer } from "./components/FloatingRestTimer";
+import { ConfirmDialog } from "./components/ConfirmDialog";
 import { WorkoutTab } from "./routes/WorkoutTab";
 import { ExercisesTab } from "./routes/ExercisesTab";
 import { ExerciseDetail } from "./routes/ExerciseDetail";
@@ -181,6 +182,7 @@ export function App() {
         <Route path="*" element={<Navigate to="/workout" replace />} />
       </Routes>
       <FloatingRestTimer />
+      <ConfirmDialog />
       </Suspense>
       </ErrorBoundary>
     </BrowserRouter>
