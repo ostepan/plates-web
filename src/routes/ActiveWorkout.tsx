@@ -1090,23 +1090,27 @@ function SetEditor({
             )}
           </FadeSlide>
         </div>
-        {seriesKnown ? (
-          <FadeSlide className="mt-2.5">
-            {recent.length >= 2 ? (
-              <Sparkline
-                points={recent}
-                height={44}
-                areaClass="fill-white/[0.06]"
-                strokeClass="stroke-accent"
-                dotClass="fill-white/70"
-              />
-            ) : (
-              <p className="border-t border-dashed border-white/15 pt-1.5 text-[9px] font-semibold uppercase tracking-[0.08em] text-white/30">
-                {t("No history yet")}
-              </p>
-            )}
-          </FadeSlide>
-        ) : null}
+        {/* Fixed-height slot reserved during the expand — the sparkline (or
+            the no-history hint) fades into it later without shifting layout. */}
+        <div className="mt-2.5 h-11">
+          {seriesKnown ? (
+            <FadeSlide className="h-full">
+              {recent.length >= 2 ? (
+                <Sparkline
+                  points={recent}
+                  height={44}
+                  areaClass="fill-white/[0.06]"
+                  strokeClass="stroke-accent"
+                  dotClass="fill-white/70"
+                />
+              ) : (
+                <p className="flex h-full items-end border-t border-dashed border-white/15 pb-1 text-[9px] font-semibold uppercase tracking-[0.08em] text-white/30">
+                  {t("No history yet")}
+                </p>
+              )}
+            </FadeSlide>
+          ) : null}
+        </div>
       </div>
 
       {/* Per-side plate breakdown — barbell lifts only */}
